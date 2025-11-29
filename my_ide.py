@@ -831,7 +831,7 @@ class MyIDE(QMainWindow):
     
     def open_settings_dialog(self):
         """打开IDE设置对话框"""
-        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
                                     QCheckBox, QSpinBox, QPushButton, QGroupBox, QLineEdit,
                                     QTabWidget)
         
@@ -1150,19 +1150,27 @@ class MyIDE(QMainWindow):
         
         file_layout = QVBoxLayout(file_tab)
         
+        # 文件编码设置
+        encoding_group = QGroupBox("文件编码")
+        encoding_layout = QGridLayout(encoding_group)
+        encoding_layout.setSpacing(15)
+        encoding_layout.setColumnStretch(1, 1)
+        
+        encoding_layout.addWidget(QLabel("默认文件编码:"), 0, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.default_encoding_combo = QComboBox()
         self.default_encoding_combo.addItems(["UTF-8", "GBK", "ASCII", "UTF-16"])
         self.default_encoding_combo.setCurrentIndex(self.settings.get("default_encoding", 0))
-        file_layout.addWidget(QLabel("默认文件编码:"))
-        file_layout.addWidget(self.default_encoding_combo)
+        encoding_layout.addWidget(self.default_encoding_combo, 0, 1)
         
         self.auto_detect_encoding_check = QCheckBox("自动检测编码")
         self.auto_detect_encoding_check.setChecked(self.settings.get("auto_detect_encoding", True))
-        file_layout.addWidget(self.auto_detect_encoding_check)
+        encoding_layout.addWidget(self.auto_detect_encoding_check, 1, 0, 1, 2)
         
         self.add_newline_at_end_check = QCheckBox("保存时自动添加换行符")
         self.add_newline_at_end_check.setChecked(self.settings.get("add_newline_at_end", True))
-        file_layout.addWidget(self.add_newline_at_end_check)
+        encoding_layout.addWidget(self.add_newline_at_end_check, 2, 0, 1, 2)
+        
+        file_layout.addWidget(encoding_group)
         
         # 6. 终端设置
         terminal_tab = QWidget()
@@ -1170,15 +1178,23 @@ class MyIDE(QMainWindow):
         
         terminal_layout = QVBoxLayout(terminal_tab)
         
-        terminal_layout.addWidget(QLabel("终端字体大小:"))
+        # 终端字体设置
+        terminal_font_group = QGroupBox("终端字体")
+        terminal_font_layout = QGridLayout(terminal_font_group)
+        terminal_font_layout.setSpacing(15)
+        terminal_font_layout.setColumnStretch(1, 1)
+        
+        terminal_font_layout.addWidget(QLabel("终端字体大小:"), 0, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.terminal_font_size_spin = QSpinBox()
         self.terminal_font_size_spin.setRange(8, 24)
         self.terminal_font_size_spin.setValue(self.settings.get("terminal_font_size", 12))
-        terminal_layout.addWidget(self.terminal_font_size_spin)
+        terminal_font_layout.addWidget(self.terminal_font_size_spin, 0, 1)
         
-        terminal_layout.addWidget(QLabel("终端字体:"))
+        terminal_font_layout.addWidget(QLabel("终端字体:"), 1, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.terminal_font_family_edit = QLineEdit(self.settings.get("terminal_font_family", "Consolas"))
-        terminal_layout.addWidget(self.terminal_font_family_edit)
+        terminal_font_layout.addWidget(self.terminal_font_family_edit, 1, 1)
+        
+        terminal_layout.addWidget(terminal_font_group)
         
         # 按钮布局
         button_layout = QHBoxLayout()
@@ -1316,22 +1332,7 @@ class MyIDE(QMainWindow):
                         editor.setBraceMatching(QsciScintilla.BraceMatch.NoBraceMatch)
                     
                     # 更新光标设置
-                    caret_style = self.settings.get("caret_style", 0)
-                    if caret_style == 0:
-                        editor.setCaretStyle(QsciScintilla.CaretStyle.CaretStyleLine)
-                    elif caret_style == 1:
-                        editor.setCaretStyle(QsciScintilla.CaretStyle.CaretStyleBlock)
-                    else:
-                        editor.setCaretStyle(QsciScintilla.CaretStyle.CaretStyleUnderline)
-                    
                     editor.setCaretWidth(self.settings.get("caret_width", 2))
-                    editor.setCaretBlinkRate(self.settings.get("caret_blink_rate", 500))
-                    if not self.settings.get("caret_blink", True):
-                        editor.setCaretBlinkRate(0)  # 禁用闪烁
-                    
-                    # 更新行高
-                    line_height = self.settings.get("line_height", 12)
-                    editor.setLineHeight(line_height)
                     
                     # 更新换行设置
                     wrap_mode = self.settings.get("wrap_mode", 1)
