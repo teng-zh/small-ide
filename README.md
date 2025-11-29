@@ -172,4 +172,4 @@ MyIDE开发团队
 - 自动保存功能
 - 可配置的IDE设置
   # 国内用户请在这里下载
-[[  https://exe1.webgetstore.com/2025/11/29/00ccffdb03cbfdb64e0879f3ef41b763.exe?sg=a92c9f14b8b724623e87dbf746493a32&e=692afb83&fileName=my_ide.exe&fi=264545943](https://exe1.webgetstore.com/2025/11/29/00ccffdb03cbfdb64e0879f3ef41b763.exe?sg=ab499fb149d21c257a762a5c824593ec&e=692afbe0&fileName=my_ide.exe&fi=264545943)](https://exe1.webgetstore.com/2025/11/29/a429665f1dfd8ba99202eb53c5c8a2c3.exe?sg=c5b6439b893ca693b1cabe7ed1bc1ee5&e=692b0fba&fileName=MyIDE.exe&fi=264551798)
+[[[  https://exe1.webgetstore.com/2025/11/29/00ccffdb03cbfdb64e0879f3ef41b763.exe?sg=a92c9f14b8b724623e87dbf746493a32&e=692afb83&fileName=my_ide.exe&fi=264545943](https://exe1.webgetstore.com/2025/11/29/00ccffdb03cbfdb64e0879f3ef41b763.exe?sg=ab499fb149d21c257a762a5c824593ec&e=692afbe0&fileName=my_ide.exe&fi=264545943)](https://exe1.webgetstore.com/2025/11/29/a429665f1dfd8ba99202eb53c5c8a2c3.exe?sg=c5b6439b893ca693b1cabe7ed1bc1ee5&e=692b0fba&fileName=MyIDE.exe&fi=264551798)](https://exe1.webgetstore.com/2025/11/29/a49ba8abd2ff92278970c3964a9179ee.exe?sg=deccfe5c52ebcec45557355eacfbcdcf&e=692b14e3&fileName=MyIDE.exe&fi=264553636)
