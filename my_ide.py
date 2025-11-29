@@ -374,6 +374,15 @@ class MyIDE(QMainWindow):
         redo_action.triggered.connect(self.redo)
         edit_menu.addAction(redo_action)
         
+        # 设置菜单
+        settings_menu = menubar.addMenu("设置")
+        
+        # 打开设置对话框
+        self.settings_action = QAction("IDE设置", self)
+        self.settings_action.setShortcut("Ctrl+, ")
+        self.settings_action.triggered.connect(self.open_settings_dialog)
+        settings_menu.addAction(self.settings_action)
+        
         # 语法检查菜单
         self.check_menu = menubar.addMenu("检查")
         
@@ -384,6 +393,31 @@ class MyIDE(QMainWindow):
         
         # 视图菜单
         view_menu = menubar.addMenu("视图")
+        
+        # 添加主题子菜单
+        theme_menu = view_menu.addMenu("主题")
+        
+        # 亮色模式
+        self.light_theme_action = QAction("亮色模式", self)
+        self.light_theme_action.setCheckable(True)
+        self.light_theme_action.triggered.connect(lambda: self.switch_theme("light"))
+        theme_menu.addAction(self.light_theme_action)
+        
+        # 暗色模式
+        self.dark_theme_action = QAction("暗色模式", self)
+        self.dark_theme_action.setCheckable(True)
+        self.dark_theme_action.triggered.connect(lambda: self.switch_theme("dark"))
+        theme_menu.addAction(self.dark_theme_action)
+        
+        # 创建工具栏
+        self.toolbar = self.addToolBar("工具栏")
+        
+        # 添加HTML运行按钮
+        self.run_html_action = QAction("在浏览器中打开", self)
+        self.run_html_action.setShortcut("F5")
+        self.run_html_action.triggered.connect(self.run_html_in_browser)
+        self.toolbar.addAction(self.run_html_action)
+        self.run_html_action.setVisible(False)  # 默认隐藏
         
         # 语言菜单 - 实现层级结构
         self.language_menu = menubar.addMenu("语言")
@@ -522,6 +556,9 @@ class MyIDE(QMainWindow):
         # 添加视图菜单选项，用于显示/隐藏终端和资源管理器
         view_menu.addAction(self.resource_dock.toggleViewAction())
         view_menu.addAction(self.terminal_dock.toggleViewAction())
+        
+        # 延迟主题设置，确保所有UI组件已经初始化
+        QTimer.singleShot(100, lambda: self.apply_initial_theme())
     
     def setup_editor(self):
         # 创建自定义编辑器类，继承QsciScintilla以实现括号自动补全
@@ -725,7 +762,52 @@ class MyIDE(QMainWindow):
     def load_settings(self):
         """加载设置文件"""
         default_settings = {
-            "changes_log_opened": False
+            "changes_log_opened": False,
+            "theme": "light",  # 默认使用亮色模式
+            "auto_save_interval": 30000,  # 30秒自动保存
+            "show_line_numbers": True,  # 显示行号
+            "show_indentation_guides": True,  # 显示缩进指南
+            "show_caret_line": False,  # 显示光标行
+            "show_whitespace": False,  # 显示空格
+            "show_eol_markers": False,  # 显示行尾标记
+            "show_ruler": False,  # 显示标尺
+            "ruler_column": 80,  # 标尺位置
+            "use_tabs": False,  # 使用空格而不是制表符
+            "tab_width": 4,  # 制表符宽度
+            "indentation_width": 4,  # 缩进宽度
+            "indent_on_tab": True,  # Tab键缩进
+            "unindent_on_backspace": True,  # 退格键取消缩进
+            "auto_complete_brackets": True,  # 自动补全括号
+            "auto_complete_quotes": True,  # 自动补全引号
+            "brace_matching": True,  # 括号匹配
+            "caret_style": 0,  # 光标样式：0=竖线
+            "caret_width": 2,  # 光标宽度
+            "line_height": 12,  # 行高
+            "caret_blink": True,  # 光标闪烁
+            "caret_blink_rate": 500,  # 光标闪烁速度
+            "show_status_bar": True,  # 显示状态栏
+            "show_toolbar": False,  # 显示工具栏
+            "show_full_path": False,  # 显示完整文件路径
+            "wrap_mode": 1,  # 换行模式：1=按单词换行
+            "wrap_visual": True,  # 显示换行标记
+            "wrap_indent_mode": 1,  # 换行缩进模式：1=与当前行相同
+            "folding_enabled": True,  # 启用代码折叠
+            "folding_margin": True,  # 显示折叠边距
+            "folding_style": 2,  # 折叠样式：2=树状
+            "syntax_check_enabled": True,  # 启用语法检查
+            "syntax_check_interval": 1000,  # 语法检查间隔
+            "show_warnings": True,  # 显示警告
+            "show_errors": True,  # 显示错误
+            "default_encoding": 0,  # 默认文件编码：0=UTF-8
+            "auto_detect_encoding": True,  # 自动检测编码
+            "add_newline_at_end": True,  # 保存时自动添加换行符
+            "font_family": "Consolas",  # 字体
+            "font_size": 12,  # 字体大小
+            "terminal_font_size": 12,  # 终端字体大小
+            "terminal_font_family": "Consolas",  # 终端字体
+            "resource_explorer_visible": False,  # 资源管理器可见性
+            "terminal_visible": False,  # 终端可见性
+            "problems_visible": False  # 问题选项卡可见性
         }
         
         if os.path.exists(self.settings_file):
@@ -737,6 +819,521 @@ class MyIDE(QMainWindow):
                 return default_settings
         else:
             return default_settings
+    
+    def open_settings_dialog(self):
+        """打开IDE设置对话框"""
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+                                    QCheckBox, QSpinBox, QPushButton, QGroupBox, QLineEdit,
+                                    QTabWidget)
+        
+        # 创建设置对话框
+        dialog = QDialog(self)
+        dialog.setWindowTitle("IDE设置")
+        dialog.resize(600, 500)
+        
+        # 创建主布局
+        main_layout = QVBoxLayout(dialog)
+        
+        # 创建标签页
+        tab_widget = QTabWidget()
+        main_layout.addWidget(tab_widget)
+        
+        # 1. 外观设置
+        appearance_tab = QWidget()
+        tab_widget.addTab(appearance_tab, "外观")
+        
+        appearance_layout = QVBoxLayout(appearance_tab)
+        
+        # 主题设置
+        theme_group = QGroupBox("主题")
+        theme_layout = QVBoxLayout(theme_group)
+        
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["亮色模式", "暗色模式"])
+        # 设置当前主题
+        current_theme = self.settings.get("theme", "light")
+        self.theme_combo.setCurrentIndex(0 if current_theme == "light" else 1)
+        theme_layout.addWidget(QLabel("选择主题:"))
+        theme_layout.addWidget(self.theme_combo)
+        appearance_layout.addWidget(theme_group)
+        
+        # 字体设置
+        font_group = QGroupBox("字体")
+        font_layout = QVBoxLayout(font_group)
+        
+        font_layout.addWidget(QLabel("字体名称:"))
+        self.font_family_edit = QLineEdit(self.settings.get("font_family", "Consolas"))
+        font_layout.addWidget(self.font_family_edit)
+        
+        font_layout.addWidget(QLabel("字体大小:"))
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(self.settings.get("font_size", 12))
+        font_layout.addWidget(self.font_size_spin)
+        appearance_layout.addWidget(font_group)
+        
+        # 2. 编辑设置
+        editor_tab = QWidget()
+        tab_widget.addTab(editor_tab, "编辑器")
+        
+        editor_layout = QVBoxLayout(editor_tab)
+        
+        # 显示设置
+        display_group = QGroupBox("显示")
+        display_layout = QVBoxLayout(display_group)
+        
+        self.show_line_numbers_check = QCheckBox("显示行号")
+        self.show_line_numbers_check.setChecked(self.settings.get("show_line_numbers", True))
+        display_layout.addWidget(self.show_line_numbers_check)
+        
+        self.show_indentation_guides_check = QCheckBox("显示缩进指南")
+        self.show_indentation_guides_check.setChecked(self.settings.get("show_indentation_guides", True))
+        display_layout.addWidget(self.show_indentation_guides_check)
+        
+        self.show_caret_line_check = QCheckBox("显示光标行")
+        self.show_caret_line_check.setChecked(self.settings.get("show_caret_line", False))
+        display_layout.addWidget(self.show_caret_line_check)
+        
+        self.show_whitespace_check = QCheckBox("显示空格")
+        self.show_whitespace_check.setChecked(self.settings.get("show_whitespace", False))
+        display_layout.addWidget(self.show_whitespace_check)
+        
+        self.show_eol_markers_check = QCheckBox("显示行尾标记")
+        self.show_eol_markers_check.setChecked(self.settings.get("show_eol_markers", False))
+        display_layout.addWidget(self.show_eol_markers_check)
+        
+        self.show_ruler_check = QCheckBox("显示标尺")
+        self.show_ruler_check.setChecked(self.settings.get("show_ruler", False))
+        display_layout.addWidget(self.show_ruler_check)
+        
+        self.ruler_column_spin = QSpinBox()
+        self.ruler_column_spin.setRange(10, 200)
+        self.ruler_column_spin.setValue(self.settings.get("ruler_column", 80))
+        ruler_layout = QHBoxLayout()
+        ruler_layout.addWidget(QLabel("标尺位置:"))
+        ruler_layout.addWidget(self.ruler_column_spin)
+        display_layout.addLayout(ruler_layout)
+        editor_layout.addWidget(display_group)
+        
+        # 缩进设置
+        indent_group = QGroupBox("缩进")
+        indent_layout = QVBoxLayout(indent_group)
+        
+        self.use_tabs_check = QCheckBox("使用制表符")
+        self.use_tabs_check.setChecked(self.settings.get("use_tabs", False))
+        indent_layout.addWidget(self.use_tabs_check)
+        
+        indent_layout.addWidget(QLabel("制表符宽度:"))
+        self.tab_width_spin = QSpinBox()
+        self.tab_width_spin.setRange(1, 8)
+        self.tab_width_spin.setValue(self.settings.get("tab_width", 4))
+        indent_layout.addWidget(self.tab_width_spin)
+        
+        indent_layout.addWidget(QLabel("缩进宽度:"))
+        self.indentation_width_spin = QSpinBox()
+        self.indentation_width_spin.setRange(1, 8)
+        self.indentation_width_spin.setValue(self.settings.get("indentation_width", 4))
+        indent_layout.addWidget(self.indentation_width_spin)
+        
+        self.indent_on_tab_check = QCheckBox("Tab键缩进")
+        self.indent_on_tab_check.setChecked(self.settings.get("indent_on_tab", True))
+        indent_layout.addWidget(self.indent_on_tab_check)
+        
+        self.unindent_on_backspace_check = QCheckBox("退格键取消缩进")
+        self.unindent_on_backspace_check.setChecked(self.settings.get("unindent_on_backspace", True))
+        indent_layout.addWidget(self.unindent_on_backspace_check)
+        editor_layout.addWidget(indent_group)
+        
+        # 自动补全设置
+        auto_complete_group = QGroupBox("自动补全")
+        auto_complete_layout = QVBoxLayout(auto_complete_group)
+        
+        self.auto_complete_brackets_check = QCheckBox("自动补全括号")
+        self.auto_complete_brackets_check.setChecked(self.settings.get("auto_complete_brackets", True))
+        auto_complete_layout.addWidget(self.auto_complete_brackets_check)
+        
+        self.brace_matching_check = QCheckBox("括号匹配")
+        self.brace_matching_check.setChecked(self.settings.get("brace_matching", True))
+        auto_complete_layout.addWidget(self.brace_matching_check)
+        
+        self.auto_complete_quotes_check = QCheckBox("自动补全引号")
+        self.auto_complete_quotes_check.setChecked(self.settings.get("auto_complete_quotes", True))
+        auto_complete_layout.addWidget(self.auto_complete_quotes_check)
+        editor_layout.addWidget(auto_complete_group)
+        
+        # 光标设置
+        cursor_group = QGroupBox("光标")
+        cursor_layout = QVBoxLayout(cursor_group)
+        
+        self.caret_style_combo = QComboBox()
+        self.caret_style_combo.addItems(["竖线", "块状", "下划线"])
+        self.caret_style_combo.setCurrentIndex(self.settings.get("caret_style", 0))
+        cursor_layout.addWidget(QLabel("光标样式:"))
+        cursor_layout.addWidget(self.caret_style_combo)
+        
+        cursor_layout.addWidget(QLabel("光标宽度:"))
+        self.caret_width_spin = QSpinBox()
+        self.caret_width_spin.setRange(1, 5)
+        self.caret_width_spin.setValue(self.settings.get("caret_width", 2))
+        cursor_layout.addWidget(self.caret_width_spin)
+        
+        self.caret_blink_check = QCheckBox("光标闪烁")
+        self.caret_blink_check.setChecked(self.settings.get("caret_blink", True))
+        cursor_layout.addWidget(self.caret_blink_check)
+        
+        cursor_layout.addWidget(QLabel("光标闪烁速度:"))
+        self.caret_blink_rate_spin = QSpinBox()
+        self.caret_blink_rate_spin.setRange(100, 2000)
+        self.caret_blink_rate_spin.setValue(self.settings.get("caret_blink_rate", 500))
+        cursor_layout.addWidget(self.caret_blink_rate_spin)
+        
+        cursor_layout.addWidget(QLabel("行高:"))
+        self.line_height_spin = QSpinBox()
+        self.line_height_spin.setRange(10, 30)
+        self.line_height_spin.setValue(self.settings.get("line_height", 12))
+        cursor_layout.addWidget(self.line_height_spin)
+        editor_layout.addWidget(cursor_group)
+        
+        # 显示扩展设置
+        display_ext_group = QGroupBox("显示扩展")
+        display_ext_layout = QVBoxLayout(display_ext_group)
+        
+        self.show_status_bar_check = QCheckBox("显示状态栏")
+        self.show_status_bar_check.setChecked(self.settings.get("show_status_bar", True))
+        display_ext_layout.addWidget(self.show_status_bar_check)
+        
+        self.show_toolbar_check = QCheckBox("显示工具栏")
+        self.show_toolbar_check.setChecked(self.settings.get("show_toolbar", False))
+        display_ext_layout.addWidget(self.show_toolbar_check)
+        
+        self.show_full_path_check = QCheckBox("显示完整文件路径")
+        self.show_full_path_check.setChecked(self.settings.get("show_full_path", False))
+        display_ext_layout.addWidget(self.show_full_path_check)
+        editor_layout.addWidget(display_ext_group)
+        
+        # 换行设置
+        wrap_group = QGroupBox("换行")
+        wrap_layout = QVBoxLayout(wrap_group)
+        
+        self.wrap_mode_combo = QComboBox()
+        self.wrap_mode_combo.addItems(["不换行", "按单词换行", "按字符换行"])
+        self.wrap_mode_combo.setCurrentIndex(self.settings.get("wrap_mode", 1))
+        wrap_layout.addWidget(QLabel("换行模式:"))
+        wrap_layout.addWidget(self.wrap_mode_combo)
+        
+        self.wrap_visual_check = QCheckBox("显示换行标记")
+        self.wrap_visual_check.setChecked(self.settings.get("wrap_visual", True))
+        wrap_layout.addWidget(self.wrap_visual_check)
+        
+        self.wrap_indent_mode_combo = QComboBox()
+        self.wrap_indent_mode_combo.addItems(["无缩进", "与当前行相同", "增加缩进"])
+        self.wrap_indent_mode_combo.setCurrentIndex(self.settings.get("wrap_indent_mode", 1))
+        wrap_layout.addWidget(QLabel("换行缩进模式:"))
+        wrap_layout.addWidget(self.wrap_indent_mode_combo)
+        editor_layout.addWidget(wrap_group)
+        
+        # 代码折叠设置
+        folding_group = QGroupBox("代码折叠")
+        folding_layout = QVBoxLayout(folding_group)
+        
+        self.folding_enabled_check = QCheckBox("启用代码折叠")
+        self.folding_enabled_check.setChecked(self.settings.get("folding_enabled", True))
+        folding_layout.addWidget(self.folding_enabled_check)
+        
+        self.folding_margin_check = QCheckBox("显示折叠边距")
+        self.folding_margin_check.setChecked(self.settings.get("folding_margin", True))
+        folding_layout.addWidget(self.folding_margin_check)
+        
+        self.folding_style_combo = QComboBox()
+        self.folding_style_combo.addItems(["无", "简单", "树状"])
+        self.folding_style_combo.setCurrentIndex(self.settings.get("folding_style", 2))
+        folding_layout.addWidget(QLabel("折叠样式:"))
+        folding_layout.addWidget(self.folding_style_combo)
+        editor_layout.addWidget(folding_group)
+        
+        # 3. 自动保存设置
+        auto_save_tab = QWidget()
+        tab_widget.addTab(auto_save_tab, "自动保存")
+        
+        auto_save_layout = QVBoxLayout(auto_save_tab)
+        
+        self.auto_save_interval_spin = QSpinBox()
+        self.auto_save_interval_spin.setRange(5000, 300000)
+        self.auto_save_interval_spin.setValue(self.settings.get("auto_save_interval", 30000))
+        self.auto_save_interval_spin.setSuffix(" 毫秒")
+        auto_save_layout.addWidget(QLabel("自动保存间隔:"))
+        auto_save_layout.addWidget(self.auto_save_interval_spin)
+        
+        # 4. 语法检查设置
+        syntax_tab = QWidget()
+        tab_widget.addTab(syntax_tab, "语法检查")
+        
+        syntax_layout = QVBoxLayout(syntax_tab)
+        
+        self.syntax_check_enabled_check = QCheckBox("启用语法检查")
+        self.syntax_check_enabled_check.setChecked(self.settings.get("syntax_check_enabled", True))
+        syntax_layout.addWidget(self.syntax_check_enabled_check)
+        
+        syntax_layout.addWidget(QLabel("语法检查间隔:"))
+        self.syntax_check_interval_spin = QSpinBox()
+        self.syntax_check_interval_spin.setRange(500, 5000)
+        self.syntax_check_interval_spin.setValue(self.settings.get("syntax_check_interval", 1000))
+        self.syntax_check_interval_spin.setSuffix(" 毫秒")
+        syntax_layout.addWidget(self.syntax_check_interval_spin)
+        
+        self.show_warnings_check = QCheckBox("显示警告")
+        self.show_warnings_check.setChecked(self.settings.get("show_warnings", True))
+        syntax_layout.addWidget(self.show_warnings_check)
+        
+        self.show_errors_check = QCheckBox("显示错误")
+        self.show_errors_check.setChecked(self.settings.get("show_errors", True))
+        syntax_layout.addWidget(self.show_errors_check)
+        
+        # 5. 文件设置
+        file_tab = QWidget()
+        tab_widget.addTab(file_tab, "文件")
+        
+        file_layout = QVBoxLayout(file_tab)
+        
+        self.default_encoding_combo = QComboBox()
+        self.default_encoding_combo.addItems(["UTF-8", "GBK", "ASCII", "UTF-16"])
+        self.default_encoding_combo.setCurrentIndex(self.settings.get("default_encoding", 0))
+        file_layout.addWidget(QLabel("默认文件编码:"))
+        file_layout.addWidget(self.default_encoding_combo)
+        
+        self.auto_detect_encoding_check = QCheckBox("自动检测编码")
+        self.auto_detect_encoding_check.setChecked(self.settings.get("auto_detect_encoding", True))
+        file_layout.addWidget(self.auto_detect_encoding_check)
+        
+        self.add_newline_at_end_check = QCheckBox("保存时自动添加换行符")
+        self.add_newline_at_end_check.setChecked(self.settings.get("add_newline_at_end", True))
+        file_layout.addWidget(self.add_newline_at_end_check)
+        
+        # 6. 终端设置
+        terminal_tab = QWidget()
+        tab_widget.addTab(terminal_tab, "终端")
+        
+        terminal_layout = QVBoxLayout(terminal_tab)
+        
+        terminal_layout.addWidget(QLabel("终端字体大小:"))
+        self.terminal_font_size_spin = QSpinBox()
+        self.terminal_font_size_spin.setRange(8, 24)
+        self.terminal_font_size_spin.setValue(self.settings.get("terminal_font_size", 12))
+        terminal_layout.addWidget(self.terminal_font_size_spin)
+        
+        terminal_layout.addWidget(QLabel("终端字体:"))
+        self.terminal_font_family_edit = QLineEdit(self.settings.get("terminal_font_family", "Consolas"))
+        terminal_layout.addWidget(self.terminal_font_family_edit)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        
+        apply_button = QPushButton("应用")
+        apply_button.clicked.connect(self.apply_settings)
+        
+        ok_button = QPushButton("确定")
+        ok_button.clicked.connect(lambda: self.apply_settings() or dialog.accept())
+        
+        cancel_button = QPushButton("取消")
+        cancel_button.clicked.connect(dialog.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(apply_button)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        
+        main_layout.addLayout(button_layout)
+        
+        dialog.exec()
+    
+    def apply_settings(self):
+        """应用设置"""
+        # 更新设置
+        self.settings["theme"] = "light" if self.theme_combo.currentIndex() == 0 else "dark"
+        self.settings["font_family"] = self.font_family_edit.text()
+        self.settings["font_size"] = self.font_size_spin.value()
+        self.settings["show_line_numbers"] = self.show_line_numbers_check.isChecked()
+        self.settings["show_indentation_guides"] = self.show_indentation_guides_check.isChecked()
+        self.settings["show_caret_line"] = self.show_caret_line_check.isChecked()
+        self.settings["show_whitespace"] = self.show_whitespace_check.isChecked()
+        self.settings["show_eol_markers"] = self.show_eol_markers_check.isChecked()
+        self.settings["show_ruler"] = self.show_ruler_check.isChecked()
+        self.settings["ruler_column"] = self.ruler_column_spin.value()
+        self.settings["use_tabs"] = self.use_tabs_check.isChecked()
+        self.settings["tab_width"] = self.tab_width_spin.value()
+        self.settings["indentation_width"] = self.indentation_width_spin.value()
+        self.settings["indent_on_tab"] = self.indent_on_tab_check.isChecked()
+        self.settings["unindent_on_backspace"] = self.unindent_on_backspace_check.isChecked()
+        self.settings["auto_complete_brackets"] = self.auto_complete_brackets_check.isChecked()
+        self.settings["auto_complete_quotes"] = self.auto_complete_quotes_check.isChecked()
+        self.settings["brace_matching"] = self.brace_matching_check.isChecked()
+        self.settings["caret_style"] = self.caret_style_combo.currentIndex()
+        self.settings["caret_width"] = self.caret_width_spin.value()
+        self.settings["line_height"] = self.line_height_spin.value()
+        self.settings["caret_blink"] = self.caret_blink_check.isChecked()
+        self.settings["caret_blink_rate"] = self.caret_blink_rate_spin.value()
+        self.settings["show_status_bar"] = self.show_status_bar_check.isChecked()
+        self.settings["show_toolbar"] = self.show_toolbar_check.isChecked()
+        self.settings["show_full_path"] = self.show_full_path_check.isChecked()
+        self.settings["wrap_mode"] = self.wrap_mode_combo.currentIndex()
+        self.settings["wrap_visual"] = self.wrap_visual_check.isChecked()
+        self.settings["wrap_indent_mode"] = self.wrap_indent_mode_combo.currentIndex()
+        self.settings["folding_enabled"] = self.folding_enabled_check.isChecked()
+        self.settings["folding_margin"] = self.folding_margin_check.isChecked()
+        self.settings["folding_style"] = self.folding_style_combo.currentIndex()
+        self.settings["auto_save_interval"] = self.auto_save_interval_spin.value()
+        self.settings["syntax_check_enabled"] = self.syntax_check_enabled_check.isChecked()
+        self.settings["syntax_check_interval"] = self.syntax_check_interval_spin.value()
+        self.settings["show_warnings"] = self.show_warnings_check.isChecked()
+        self.settings["show_errors"] = self.show_errors_check.isChecked()
+        self.settings["default_encoding"] = self.default_encoding_combo.currentIndex()
+        self.settings["auto_detect_encoding"] = self.auto_detect_encoding_check.isChecked()
+        self.settings["add_newline_at_end"] = self.add_newline_at_end_check.isChecked()
+        self.settings["terminal_font_size"] = self.terminal_font_size_spin.value()
+        self.settings["terminal_font_family"] = self.terminal_font_family_edit.text()
+        
+        # 保存设置
+        self.save_settings()
+        
+        # 应用主题
+        self.switch_theme(self.settings["theme"])
+        
+        # 更新编辑器设置
+        self.update_editor_settings()
+        
+        # 更新自动保存定时器
+        self.init_auto_save()
+        
+        # 更新状态栏信息
+        self.statusBar().showMessage("设置已应用")
+    
+    def update_editor_settings(self):
+        """更新所有编辑器的设置"""
+        if hasattr(self, 'tab_widget') and self.tab_widget is not None:
+            for i in range(self.tab_widget.count()):
+                editor = self.tab_widget.widget(i)
+                if hasattr(editor, "setPaper"):
+                    # 更新字体
+                    font = editor.font()
+                    font.setFamily(self.settings.get("font_family", "Consolas"))
+                    font.setPointSize(self.settings.get("font_size", 12))
+                    editor.setFont(font)
+                    editor.setMarginsFont(font)
+                    
+                    # 更新行号显示
+                    editor.setMarginLineNumbers(0, self.settings.get("show_line_numbers", True))
+                    
+                    # 更新缩进指南
+                    editor.setIndentationGuides(self.settings.get("show_indentation_guides", True))
+                    
+                    # 更新光标行
+                    editor.setCaretLineVisible(self.settings.get("show_caret_line", False))
+                    
+                    # 更新显示空格和行尾标记
+                    whitespace_visibility = QsciScintilla.WhitespaceVisibility.WsInvisible
+                    if self.settings.get("show_whitespace", False):
+                        if self.settings.get("show_eol_markers", False):
+                            whitespace_visibility = QsciScintilla.WhitespaceVisibility.WsVisibleAfterIndent
+                        else:
+                            whitespace_visibility = QsciScintilla.WhitespaceVisibility.WsVisible
+                    editor.setWhitespaceVisibility(whitespace_visibility)
+                    editor.setWhitespaceSize(1)
+                    
+                    # 更新标尺
+                    if self.settings.get("show_ruler", False):
+                        editor.setEdgeMode(QsciScintilla.EdgeMode.EdgeLine)
+                        editor.setEdgeColumn(self.settings.get("ruler_column", 80))
+                        editor.setEdgeColor(Qt.GlobalColor.lightGray)
+                    else:
+                        editor.setEdgeMode(QsciScintilla.EdgeMode.EdgeNone)
+                    
+                    # 更新制表符和缩进设置
+                    editor.setIndentationsUseTabs(self.settings.get("use_tabs", False))
+                    editor.setTabWidth(self.settings.get("tab_width", 4))
+                    editor.setIndentationWidth(self.settings.get("indentation_width", 4))
+                    editor.setTabIndents(self.settings.get("indent_on_tab", True))
+                    editor.setBackspaceUnindents(self.settings.get("unindent_on_backspace", True))
+                    
+                    # 更新括号匹配
+                    if self.settings.get("brace_matching", True):
+                        editor.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
+                    else:
+                        editor.setBraceMatching(QsciScintilla.BraceMatch.NoBraceMatch)
+                    
+                    # 更新光标设置
+                    caret_style = self.settings.get("caret_style", 0)
+                    if caret_style == 0:
+                        editor.setCaretStyle(QsciScintilla.CaretStyle.CaretStyleLine)
+                    elif caret_style == 1:
+                        editor.setCaretStyle(QsciScintilla.CaretStyle.CaretStyleBlock)
+                    else:
+                        editor.setCaretStyle(QsciScintilla.CaretStyle.CaretStyleUnderline)
+                    
+                    editor.setCaretWidth(self.settings.get("caret_width", 2))
+                    editor.setCaretBlinkRate(self.settings.get("caret_blink_rate", 500))
+                    if not self.settings.get("caret_blink", True):
+                        editor.setCaretBlinkRate(0)  # 禁用闪烁
+                    
+                    # 更新行高
+                    line_height = self.settings.get("line_height", 12)
+                    editor.setLineHeight(line_height)
+                    
+                    # 更新换行设置
+                    wrap_mode = self.settings.get("wrap_mode", 1)
+                    if wrap_mode == 0:
+                        editor.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+                    elif wrap_mode == 1:
+                        editor.setWrapMode(QsciScintilla.WrapMode.WrapWord)
+                    else:
+                        editor.setWrapMode(QsciScintilla.WrapMode.WrapChar)
+                    
+                    # 更新换行视觉标记
+                    if self.settings.get("wrap_visual", True):
+                        editor.setWrapVisualFlags(QsciScintilla.WrapVisualFlag.WrapFlagByText)
+                    else:
+                        editor.setWrapVisualFlags(QsciScintilla.WrapVisualFlag.WrapFlagNone)
+                    
+                    # 更新换行缩进模式
+                    wrap_indent_mode = self.settings.get("wrap_indent_mode", 1)
+                    if wrap_indent_mode == 0:
+                        editor.setWrapIndentMode(QsciScintilla.WrapIndentMode.WrapIndentNone)
+                    elif wrap_indent_mode == 1:
+                        editor.setWrapIndentMode(QsciScintilla.WrapIndentMode.WrapIndentSame)
+                    else:
+                        editor.setWrapIndentMode(QsciScintilla.WrapIndentMode.WrapIndentMore)
+                    
+                    # 更新代码折叠设置
+                    folding_enabled = self.settings.get("folding_enabled", True)
+                    folding_style = self.settings.get("folding_style", 2)
+                    
+                    if folding_enabled:
+                        if folding_style == 0:
+                            editor.setFolding(QsciScintilla.FoldStyle.NoFoldStyle)
+                        elif folding_style == 1:
+                            editor.setFolding(QsciScintilla.FoldStyle.BoxedFoldStyle)
+                        else:
+                            editor.setFolding(QsciScintilla.FoldStyle.BoxedTreeFoldStyle)
+                    else:
+                        editor.setFolding(QsciScintilla.FoldStyle.NoFoldStyle)
+                    
+                    # 更新折叠边距
+                    if self.settings.get("folding_margin", True):
+                        editor.setMarginWidth(1, 20)  # 折叠边距宽度
+                    else:
+                        editor.setMarginWidth(1, 0)  # 隐藏折叠边距
+                    
+                    # 更新状态栏显示
+                    self.statusBar().setVisible(self.settings.get("show_status_bar", True))
+                    
+                    # 更新终端设置
+                    if hasattr(self, 'terminal_tab') and self.terminal_tab is not None:
+                        for i in range(self.terminal_tab.count()):
+                            terminal = self.terminal_tab.widget(i)
+                            if hasattr(terminal, "output"):
+                                # 终端字体设置
+                                terminal_font_family = self.settings.get("terminal_font_family", "Consolas")
+                                terminal_font_size = self.settings.get("terminal_font_size", 12)
+                                terminal.output.setStyleSheet(f"background-color: black; color: white; font-family: {terminal_font_family}; font-size: {terminal_font_size}pt;")
     
     def save_settings(self):
         """保存设置文件"""
@@ -1018,10 +1615,12 @@ class MyIDE(QMainWindow):
         editor.redo()
     
     def on_tab_changed(self, index):
-        # 标签页切换时更新状态栏
+        # 标签页切换时更新状态栏并应用当前主题
         editor = self.tab_widget.currentWidget()
         if editor:
             editor.update_status()
+            # 应用当前主题，确保切换标签页后主题保持一致
+            self.switch_theme(self.settings.get("theme", "light"))
     
     def detect_language(self, content, file_ext=None):
         """根据文件内容和扩展名自动检测编程语言"""
@@ -1109,6 +1708,13 @@ class MyIDE(QMainWindow):
             from PyQt6.Qsci import QsciLexerHTML
             lexer = QsciLexerHTML()
             lexer.setFont(font)
+            # 设置HTML lexer支持嵌入CSS和JavaScript
+            try:
+                # 启用HTML中的CSS和JavaScript支持
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
+            except AttributeError:
+                pass
             editor.setLexer(lexer)
         elif language == "JavaScript" or language == "JSON" or language == "JSON5":
             from PyQt6.Qsci import QsciLexerJavaScript
@@ -1130,13 +1736,19 @@ class MyIDE(QMainWindow):
                 # 如果没有Markdown lexer，使用HTML或普通文本
                 editor.setLexer(None)
         elif language == "CSS":
+            from PyQt6.Qsci import QsciLexerCSS
+            lexer = QsciLexerCSS()
+            lexer.setFont(font)
+            # 设置CSS lexer的颜色主题
             try:
-                from PyQt6.Qsci import QsciLexerCSS
-                lexer = QsciLexerCSS()
-                lexer.setFont(font)
-                editor.setLexer(lexer)
-            except ImportError:
-                editor.setLexer(None)
+                # 确保CSS语法高亮颜色鲜明
+                lexer.setColor(QColor(0, 0, 128), QsciLexerCSS.ColorProperty)
+                lexer.setColor(QColor(0, 128, 0), QsciLexerCSS.ColorComment)
+                lexer.setColor(QColor(128, 0, 0), QsciLexerCSS.ColorKeyword)
+                lexer.setColor(QColor(0, 0, 0), QsciLexerCSS.ColorDefault)
+            except AttributeError:
+                pass
+            editor.setLexer(lexer)
         elif language == "PHP":
             try:
                 from PyQt6.Qsci import QsciLexerPHP
@@ -1247,8 +1859,25 @@ class MyIDE(QMainWindow):
         if hasattr(self, 'current_language_label'):
             self.current_language_label.setText(language)
         
+        # 更新HTML运行按钮可见性
+        if hasattr(self, 'run_html_action'):
+            self.run_html_action.setVisible(language == "HTML")
+        
         # 更新运行菜单可见性
         # 运行菜单已被删除，不再需要更新可见性
+    
+    def run_html_in_browser(self):
+        """在浏览器中打开当前HTML文件"""
+        editor = self.tab_widget.currentWidget()
+        if editor and hasattr(editor, 'current_file') and editor.current_file:
+            # 保存文件
+            self.save_file()
+            
+            # 在浏览器中打开
+            import webbrowser
+            webbrowser.open(editor.current_file)
+        else:
+            self.statusBar().showMessage("请先保存HTML文件")
     
     def add_terminal_tab(self):
         """添加新的终端标签页"""
@@ -1594,11 +2223,8 @@ class MyIDE(QMainWindow):
             if 'var ' in line:
                 problems.append((line_num, line.find('var') + 1, "建议使用let或const代替var", "warning"))
             
-            # 检查分号
-            if stripped_line and not stripped_line.endswith(';') and not stripped_line.endswith('{') and not stripped_line.endswith('}'):
-                # 检查是否是控制流语句
-                if not any(keyword in stripped_line for keyword in ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'throw', 'try', 'catch', 'finally', 'function', 'class', 'interface', 'enum', 'record', 'extends', 'implements', 'export', 'import', 'from', 'as', 'async', 'await', 'new', 'super', 'this', 'typeof', 'instanceof', 'delete', 'void', 'in', 'of', 'with', 'debugger', 'yield', 'return', 'throw', 'try', 'catch', 'finally', 'switch', 'case', 'default', 'break', 'continue', 'if', 'else', 'for', 'while', 'do', 'label:', 'goto', 'const', 'let', 'var', 'function', 'class', 'interface', 'enum', 'record', 'extends', 'implements', 'export', 'import', 'from', 'as', 'async', 'await', 'new', 'super', 'this', 'typeof', 'instanceof', 'delete', 'void', 'in', 'of', 'with', 'debugger', 'yield']):
-                    problems.append((line_num, len(line), "建议添加分号", "warning"))
+            # JavaScript不需要强制分号，移除分号警告
+            # 只检查其他语法问题
         
         # 检查未闭合的括号
         for open_brace, open_line, open_pos in brace_stack:
@@ -1658,9 +2284,7 @@ class MyIDE(QMainWindow):
                 if line.count(':') > 1:
                     problems.append((line_num, line.find(':') + 1, "CSS属性中不应有多个冒号", "warning"))
                 
-                # 检查属性值是否有分号
-                if ';' not in line and not line.strip().endswith('{') and not line.strip().endswith('}'):
-                    problems.append((line_num, len(line), "CSS属性值建议添加分号", "warning"))
+                # CSS不需要强制分号，移除分号警告
             
             # 检查CSS选择器
             if '{' in line and not line.strip().startswith('/*') and not line.strip().startswith('//'):
@@ -1756,6 +2380,149 @@ class MyIDE(QMainWindow):
         # 在状态栏显示信息
         self.statusBar().showMessage(f"{language}语法检查完成，发现 {len(problems)} 个问题")
         return problems
+    
+    def apply_initial_theme(self):
+        """应用初始主题"""
+        # 根据当前设置设置主题
+        if self.settings.get("theme", "light") == "light":
+            self.light_theme_action.setChecked(True)
+            self.switch_theme("light")
+        else:
+            self.dark_theme_action.setChecked(True)
+            self.switch_theme("dark")
+    
+    def switch_theme(self, theme):
+        """切换IDE主题"""
+        from PyQt6.QtGui import QPalette, QColor
+        
+        # 更新设置
+        self.settings["theme"] = theme
+        self.save_settings()
+        
+        # 更新主题菜单项的选中状态
+        self.light_theme_action.setChecked(theme == "light")
+        self.dark_theme_action.setChecked(theme == "dark")
+        
+        # 定义主题颜色
+        if theme == "light":
+            # 亮色主题
+            editor_bg = QColor(255, 255, 255)  # 白色背景
+            editor_fg = QColor(0, 0, 0)  # 黑色前景
+            terminal_bg = QColor(0, 0, 0)  # 终端保持黑色
+            terminal_fg = QColor(255, 255, 255)  # 终端保持白色文字
+            margin_bg = QColor(240, 240, 240)  # 浅灰色边距
+            caret_line_bg = QColor(250, 250, 200)  # 浅黄色光标行
+            indent_guide = QColor(200, 200, 200)  # 浅灰色缩进指南
+            list_bg = QColor(255, 255, 255)  # 白色列表背景
+            list_fg = QColor(0, 0, 0)  # 黑色列表文字
+        else:
+            # 暗色主题
+            editor_bg = QColor(30, 30, 30)  # 深灰色背景
+            editor_fg = QColor(200, 200, 200)  # 浅灰色前景
+            terminal_bg = QColor(0, 0, 0)  # 终端保持黑色
+            terminal_fg = QColor(255, 255, 255)  # 终端保持白色文字
+            margin_bg = QColor(50, 50, 50)  # 深灰色边距
+            caret_line_bg = QColor(50, 50, 70)  # 深蓝色光标行
+            indent_guide = QColor(70, 70, 70)  # 深灰色缩进指南
+            list_bg = QColor(30, 30, 30)  # 深灰色列表背景
+            list_fg = QColor(200, 200, 200)  # 浅灰色列表文字
+        
+        # 更新所有编辑器的主题
+        if hasattr(self, 'tab_widget') and self.tab_widget is not None:
+            for i in range(self.tab_widget.count()):
+                editor = self.tab_widget.widget(i)
+                if hasattr(editor, "setPaper"):
+                    # 更新编辑器背景色
+                    editor.setPaper(editor_bg)
+                    editor.setColor(editor_fg)
+                    
+                    # 更新边距颜色
+                    editor.setMarginsBackgroundColor(margin_bg)
+                    
+                    # 更新光标行颜色
+                    editor.setCaretLineBackgroundColor(caret_line_bg)
+                    
+                    # 更新缩进指南颜色
+                    editor.setIndentationGuidesBackgroundColor(indent_guide)
+                    
+                    # 更新语法高亮颜色
+                    lexer = editor.lexer()
+                    if lexer:
+                        # 设置lexer的基本颜色
+                        lexer.setDefaultPaper(editor_bg)
+                        lexer.setDefaultColor(editor_fg)
+                        
+                        # 针对不同类型的lexer设置特定颜色
+                        try:
+                            from PyQt6.Qsci import QsciLexerHTML, QsciLexerCSS, QsciLexerJavaScript
+                            
+                            if isinstance(lexer, QsciLexerHTML):
+                                # HTML lexer特定颜色设置 - 更亮的颜色
+                                lexer.setColor(QColor(255, 0, 0), QsciLexerHTML.ColorTag)  # 亮红色标签
+                                lexer.setColor(QColor(0, 128, 255), QsciLexerHTML.ColorAttribute)  # 亮蓝色属性
+                                lexer.setColor(QColor(0, 200, 0), QsciLexerHTML.ColorComment)  # 亮绿色注释
+                                lexer.setColor(QColor(255, 255, 0), QsciLexerHTML.ColorEntity)  # 亮黄色实体
+                                lexer.setColor(QColor(0, 255, 255), QsciLexerHTML.ColorNumber)  # 亮青色数字
+                                lexer.setColor(QColor(255, 0, 255), QsciLexerHTML.ColorString)  # 亮紫色字符串
+                            elif isinstance(lexer, QsciLexerCSS):
+                                # CSS lexer特定颜色设置 - 更亮的颜色
+                                lexer.setColor(QColor(0, 128, 255), QsciLexerCSS.ColorProperty)  # 亮蓝色属性
+                                lexer.setColor(QColor(0, 200, 0), QsciLexerCSS.ColorComment)  # 亮绿色注释
+                                lexer.setColor(QColor(255, 0, 0), QsciLexerCSS.ColorKeyword)  # 亮红色关键字
+                                lexer.setColor(QColor(255, 0, 255), QsciLexerCSS.ColorString)  # 亮紫色字符串
+                                lexer.setColor(QColor(0, 255, 255), QsciLexerCSS.ColorNumber)  # 亮青色数字
+                                lexer.setColor(QColor(255, 255, 0), QsciLexerCSS.ColorSelector)  # 亮黄色选择器
+                            elif isinstance(lexer, QsciLexerJavaScript):
+                                # JavaScript lexer特定颜色设置 - 更亮的颜色
+                                lexer.setColor(QColor(255, 0, 0), QsciLexerJavaScript.ColorKeyword)  # 亮红色关键字
+                                lexer.setColor(QColor(0, 200, 0), QsciLexerJavaScript.ColorComment)  # 亮绿色注释
+                                lexer.setColor(QColor(255, 0, 255), QsciLexerJavaScript.ColorString)  # 亮紫色字符串
+                                lexer.setColor(QColor(0, 255, 255), QsciLexerJavaScript.ColorNumber)  # 亮青色数字
+                            
+                            # 设置括号颜色
+                            try:
+                                # 为所有lexer设置括号颜色
+                                lexer.setColor(QColor(255, 255, 0), QsciLexerHTML.ColorOperator)  # 亮黄色括号
+                                lexer.setColor(QColor(255, 255, 0), QsciLexerCSS.ColorOperator)  # 亮黄色括号
+                                lexer.setColor(QColor(255, 255, 0), QsciLexerJavaScript.ColorOperator)  # 亮黄色括号
+                            except AttributeError:
+                                # 忽略不支持的颜色类型
+                                pass
+                        except (ImportError, AttributeError):
+                            # 忽略不支持的lexer或颜色类型
+                            pass
+                        
+                        # 重新应用lexer
+                        editor.setLexer(lexer)
+        
+        # 更新所有终端的主题
+        if hasattr(self, 'terminal_tab') and self.terminal_tab is not None:
+            for i in range(self.terminal_tab.count()):
+                terminal = self.terminal_tab.widget(i)
+                if hasattr(terminal, "output"):
+                    # 终端背景色和前景色
+                    terminal.output.setStyleSheet(f"background-color: {terminal_bg.name()}; color: {terminal_fg.name()}; font-family: Consolas, monospace;")
+        
+        # 更新资源管理器的主题
+        if hasattr(self, 'resource_explorer') and self.resource_explorer is not None:
+            palette = self.resource_explorer.tree.palette()
+            palette.setColor(QPalette.ColorRole.Window, editor_bg)
+            palette.setColor(QPalette.ColorRole.WindowText, editor_fg)
+            palette.setColor(QPalette.ColorRole.Base, editor_bg)
+            palette.setColor(QPalette.ColorRole.Text, editor_fg)
+            self.resource_explorer.tree.setPalette(palette)
+        
+        # 更新问题选项卡的主题
+        if hasattr(self, 'problems_list') and self.problems_list is not None:
+            palette = self.problems_list.palette()
+            palette.setColor(QPalette.ColorRole.Window, list_bg)
+            palette.setColor(QPalette.ColorRole.WindowText, list_fg)
+            palette.setColor(QPalette.ColorRole.Base, list_bg)
+            palette.setColor(QPalette.ColorRole.Text, list_fg)
+            self.problems_list.setPalette(palette)
+        
+        # 更新状态栏信息
+        self.statusBar().showMessage(f"已切换到{theme}主题")
     
     def show_syntax_errors(self, problems):
         """显示语法错误和警告"""
