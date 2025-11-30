@@ -136,49 +136,90 @@ class TerminalWidget(QWidget):
         """初始化终端界面"""
         self.layout = QVBoxLayout(self)
         
-        # 终端输出显示
+        # 终端输出显示 - 只读
         self.output = QPlainTextEdit()
-        self.output.setReadOnly(False)
+        self.output.setReadOnly(True)  # 输出区域只读，用户不能编辑历史内容
         self.output.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace;")
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)  # 不自动换行
         self.layout.addWidget(self.output)
         
-        # 设置焦点
-        self.output.setFocus()
+        # 命令输入区域 - 可编辑
+        self.input_layout = QHBoxLayout()
+        
+        # 提示符标签
+        self.prompt_label = QLabel()
+        self.prompt_label.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace;")
+        self.input_layout.addWidget(self.prompt_label)
+        
+        # 命令输入框
+        self.input_line = QLineEdit()
+        self.input_line.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace; border: none;")
+        self.input_line.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.input_line.returnPressed.connect(self.handle_command)
+        self.input_line.installEventFilter(self)
+        self.input_layout.addWidget(self.input_line, 1)  # 输入框占满剩余空间
+        
+        self.layout.addLayout(self.input_layout)
         
         # 显示欢迎信息和初始提示符
         self.output.appendPlainText(f"PowerShell 终端 - 当前目录: {self.current_dir}")
         self.output.appendPlainText("输入命令并按回车执行...")
         self.output.appendPlainText("")
         self.show_prompt()
+        
+        # 设置焦点到输入框
+        self.input_line.setFocus()
     
     def show_prompt(self):
         """显示PowerShell风格的命令提示符"""
         prompt = f"PS {self.current_dir}>\ "
-        self.output.appendPlainText(prompt)
+        self.prompt_label.setText(prompt)
+    
+    def handle_command(self):
+        """处理用户输入的命令"""
+        command = self.input_line.text().strip()
+        
+        # 显示命令到输出区域
+        full_line = f"{self.prompt_label.text()}{command}"
+        self.output.appendPlainText(full_line)
+        
+        # 执行命令
+        self.send_command(command)
+        
+        # 清空输入框
+        self.input_line.clear()
+        
+        # 显示新提示符
+        self.show_prompt()
+        
+        # 滚动到底部
         self.output.ensureCursorVisible()
     
-    def handle_key_press(self, event):
-        """处理键盘事件，支持命令历史导航"""
+    def eventFilter(self, obj, event):
+        """事件过滤器，处理命令历史导航"""
         from PyQt6.QtCore import Qt
         
-        if event.key() == Qt.Key.Key_Up:
-            # 向上导航历史
-            if self.history_index > 0:
-                self.history_index -= 1
-                self.input_line.setText(self.history[self.history_index])
-        elif event.key() == Qt.Key.Key_Down:
-            # 向下导航历史
-            if self.history_index < len(self.history) - 1:
-                self.history_index += 1
-                self.input_line.setText(self.history[self.history_index])
-            else:
-                # 到达历史末尾，清空输入
-                self.history_index = len(self.history)
-                self.input_line.clear()
-        else:
-            # 其他按键，调用默认处理
-            super(QLineEdit, self.input_line).keyPressEvent(event)
+        if obj == self.input_line and event.type() == event.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Up:
+                # 向上导航历史
+                if self.history_index > 0:
+                    self.history_index -= 1
+                    self.input_line.setText(self.history[self.history_index])
+                    return True
+            elif event.key() == Qt.Key.Key_Down:
+                # 向下导航历史
+                if self.history_index < len(self.history) - 1:
+                    self.history_index += 1
+                    self.input_line.setText(self.history[self.history_index])
+                    return True
+                else:
+                    # 到达历史末尾，清空输入
+                    self.history_index = len(self.history)
+                    self.input_line.clear()
+                    return True
+        
+        # 其他事件，调用默认处理
+        return super().eventFilter(obj, event)
     
     def start_process(self):
         """启动终端进程"""
@@ -259,39 +300,9 @@ class TerminalWidget(QWidget):
     
     def keyPressEvent(self, event):
         """处理键盘事件"""
-        from PyQt6.QtCore import Qt
-        
-        if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
-            # 获取当前行内容
-            cursor = self.output.textCursor()
-            cursor.movePosition(cursor.MoveOperation.StartOfLine)
-            cursor.movePosition(cursor.MoveOperation.EndOfLine, cursor.MoveMode.KeepAnchor)
-            line = cursor.selectedText()
-            
-            # 提取命令（去掉提示符）
-            if line.startswith(f"PS {self.current_dir}>\ "):
-                command = line[len(f"PS {self.current_dir}>\ "):].strip()
-                self.send_command(command)
-                # 显示新的提示符
-                self.show_prompt()
-        elif event.key() == Qt.Key.Key_Up:
-            # 向上导航历史
-            if self.history_index > 0:
-                self.history_index -= 1
-                # 更新当前行
-                self.update_current_line(self.history[self.history_index])
-        elif event.key() == Qt.Key.Key_Down:
-            # 向下导航历史
-            if self.history_index < len(self.history) - 1:
-                self.history_index += 1
-                self.update_current_line(self.history[self.history_index])
-            else:
-                # 到达历史末尾，清空当前行
-                self.history_index = len(self.history)
-                self.update_current_line("")
-        else:
-            # 其他按键，调用默认处理
-            super().keyPressEvent(event)
+        # 将焦点保持在输入框
+        self.input_line.setFocus()
+        super().keyPressEvent(event)
     
     def update_current_line(self, text):
         """更新当前行内容"""
@@ -631,7 +642,7 @@ class MyIDE(QMainWindow):
                         self.update_status()
                         return
                     
-                # 处理括号补全
+                # 处理括号和引号补全
                 key = event.text()
                 if key in self.brace_pairs:
                     # 获取当前光标位置和上下文
@@ -667,6 +678,27 @@ class MyIDE(QMainWindow):
                                     super().keyPressEvent(event)
                                     self.update_status()
                                     return
+                    
+                    # 智能处理引号：如果前面已经有引号，只插入单个引号
+                    if key in ['"', "'"]:
+                        # 获取当前行内容
+                        current_line = self.text(line)
+                        
+                        # 检查光标前是否已经有引号
+                        if col > 0 and current_line[col-1] == key:
+                            # 前面已经有引号，只插入单个引号
+                            super().keyPressEvent(event)
+                            self.update_status()
+                            return
+                        
+                        # 检查IDE设置中的自动补全引号选项
+                        if hasattr(self.parent_ide, 'settings'):
+                            auto_complete_quotes = self.parent_ide.settings.get("auto_complete_quotes", True)
+                            if not auto_complete_quotes:
+                                # 如果自动补全引号关闭，只插入单个引号
+                                super().keyPressEvent(event)
+                                self.update_status()
+                                return
                     
                     # 普通括号补全
                     super().keyPressEvent(event)
@@ -718,15 +750,17 @@ class MyIDE(QMainWindow):
         editor.setFont(font)
         editor.setMarginsFont(font)
         
-        # 设置边距
-        editor.setMarginWidth(0, 50)  # 行号边距
+        # 设置边距 - 统一宽度为50，所有标签页保持一致
+        editor.setMarginWidth(0, 50)  # 行号边距，所有标签页保持一致
         editor.setMarginLineNumbers(0, True)
-        editor.setMarginsBackgroundColor(Qt.GlobalColor.lightGray)
         
         # 设置语法高亮
         lexer = QsciLexerPython()
         lexer.setFont(font)
         editor.setLexer(lexer)
+        
+        # 立即应用当前主题到lexer，确保所有颜色设置正确
+        self.apply_current_theme_to_editor(editor)
         
         # 设置自动缩进 - 优化版本
         editor.setAutoIndent(True)
@@ -816,7 +850,22 @@ class MyIDE(QMainWindow):
             "terminal_font_family": "Consolas",  # 终端字体
             "resource_explorer_visible": False,  # 资源管理器可见性
             "terminal_visible": False,  # 终端可见性
-            "problems_visible": False  # 问题选项卡可见性
+            "problems_visible": False,  # 问题选项卡可见性
+            # 主题颜色设置
+            "light_editor_bg": "255,255,255",  # 亮色主题编辑器背景
+            "light_editor_fg": "0,0,0",  # 亮色主题编辑器前景
+            "light_margin_bg": "255,255,255",  # 亮色主题边距背景
+            "light_caret_line_bg": "250,250,200",  # 亮色主题光标行背景
+            "light_indent_guide": "200,200,200",  # 亮色主题缩进指南
+            "light_matched_brace_bg": "200,200,200",  # 亮色主题括号匹配背景
+            "light_matched_brace_fg": "0,0,0",  # 亮色主题括号匹配前景
+            "dark_editor_bg": "30,30,30",  # 暗色主题编辑器背景
+            "dark_editor_fg": "255,255,255",  # 暗色主题编辑器前景
+            "dark_margin_bg": "30,30,30",  # 暗色主题边距背景
+            "dark_caret_line_bg": "50,50,70",  # 暗色主题光标行背景
+            "dark_indent_guide": "70,70,70",  # 暗色主题缩进指南
+            "dark_matched_brace_bg": "50,50,70",  # 暗色主题括号匹配背景
+            "dark_matched_brace_fg": "255,255,255"  # 暗色主题括号匹配前景
         }
         
         if os.path.exists(self.settings_file):
@@ -838,17 +887,61 @@ class MyIDE(QMainWindow):
         # 创建设置对话框
         dialog = QDialog(self)
         dialog.setWindowTitle("IDE设置")
-        dialog.resize(700, 600)  # 增加对话框大小
+        dialog.setFixedSize(1200, 800)  # 增加窗口高度，提供更多空间
+        
+        # 设置对话框字体和颜色，确保文字清晰可见
+        from PyQt6.QtGui import QFont, QPalette, QColor
+        
+        # 设置字体
+        dialog_font = QFont()  # 使用系统默认字体
+        dialog_font.setPointSize(8)  # 设置合适的字体大小
+        dialog.setFont(dialog_font)
+        
+        # 根据当前主题设置对话框颜色
+        current_theme = self.settings.get("theme", "light")
+        palette = dialog.palette()
+        
+        if current_theme == "dark":
+            # 暗色主题：深色背景，浅色文字
+            palette.setColor(QPalette.ColorRole.Window, QColor(40, 40, 40))  # 深灰色背景
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(200, 200, 200))  # 浅灰色文字
+            palette.setColor(QPalette.ColorRole.Base, QColor(50, 50, 50))  # 深灰色输入框背景
+            palette.setColor(QPalette.ColorRole.Text, QColor(200, 200, 200))  # 浅灰色输入框文字
+            palette.setColor(QPalette.ColorRole.Button, QColor(60, 60, 60))  # 按钮背景
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(200, 200, 200))  # 按钮文字
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(0, 120, 215))  # 高亮颜色
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))  # 高亮文字
+        else:
+            # 亮色主题：浅色背景，深色文字
+            palette.setColor(QPalette.ColorRole.Window, QColor(255, 255, 255))  # 白色背景
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(0, 0, 0))  # 黑色文字
+            palette.setColor(QPalette.ColorRole.Base, QColor(255, 255, 255))  # 白色输入框背景
+            palette.setColor(QPalette.ColorRole.Text, QColor(0, 0, 0))  # 黑色输入框文字
+            palette.setColor(QPalette.ColorRole.Button, QColor(240, 240, 240))  # 按钮背景
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(0, 0, 0))  # 按钮文字
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(0, 120, 215))  # 高亮颜色
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))  # 高亮文字
+        
+        dialog.setPalette(palette)
+        
+        # 将字体和颜色应用到所有子控件
+        def apply_styles_to_children(widget):
+            widget.setFont(dialog_font)
+            widget.setPalette(palette)
+            for child in widget.children():
+                apply_styles_to_children(child)
+        
+        apply_styles_to_children(dialog)
         
         # 创建主布局
         main_layout = QVBoxLayout(dialog)
-        main_layout.setSpacing(10)  # 设置布局间距
+        main_layout.setSpacing(20)  # 增加布局间距，给控件更多垂直空间
         main_layout.setContentsMargins(15, 15, 15, 15)  # 设置布局边距
         
         # 创建标签页
         tab_widget = QTabWidget()
         main_layout.addWidget(tab_widget)
-        tab_widget.setMinimumSize(650, 500)
+        # 移除标签页最小尺寸限制，让标签页可以自由调整大小
         
         # 1. 外观设置
         appearance_tab = QWidget()
@@ -861,11 +954,11 @@ class MyIDE(QMainWindow):
         theme_layout = QHBoxLayout(theme_group)  # 使用水平布局
         theme_layout.setSpacing(10)
         
+        # 恢复深色主题支持
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["亮色模式", "暗色模式"])
+        self.theme_combo.addItems(["亮色模式", "深色模式"])
         # 设置当前主题
-        current_theme = self.settings.get("theme", "light")
-        self.theme_combo.setCurrentIndex(0 if current_theme == "light" else 1)
+        self.theme_combo.setCurrentIndex(0 if self.settings.get("theme") == "light" else 1)
         theme_layout.addWidget(QLabel("选择主题:"))
         theme_layout.addWidget(self.theme_combo)
         theme_layout.addStretch()  # 添加伸缩项，使控件靠左对齐
@@ -897,8 +990,11 @@ class MyIDE(QMainWindow):
         # 显示设置
         display_group = QGroupBox("显示")
         display_layout = QGridLayout(display_group)  # 使用网格布局
-        display_layout.setSpacing(15)
+        display_layout.setSpacing(20)  # 设置合适的间距
+        # 移除固定列宽限制，让布局自适应内容
+        display_layout.setColumnStretch(0, 1)
         display_layout.setColumnStretch(1, 1)
+        display_layout.setColumnStretch(2, 1)
         display_layout.setColumnStretch(3, 1)
         
         # 第一行
@@ -942,8 +1038,11 @@ class MyIDE(QMainWindow):
         # 缩进设置
         indent_group = QGroupBox("缩进")
         indent_layout = QGridLayout(indent_group)  # 使用网格布局
-        indent_layout.setSpacing(15)
+        indent_layout.setSpacing(20)  # 设置合适的间距
+        # 移除固定列宽限制，让布局自适应内容
+        indent_layout.setColumnStretch(0, 1)
         indent_layout.setColumnStretch(1, 1)
+        indent_layout.setColumnStretch(2, 1)
         indent_layout.setColumnStretch(3, 1)
         
         # 第一行
@@ -978,8 +1077,11 @@ class MyIDE(QMainWindow):
         # 自动补全设置
         auto_complete_group = QGroupBox("自动补全")
         auto_complete_layout = QGridLayout(auto_complete_group)  # 使用网格布局
-        auto_complete_layout.setSpacing(15)
+        auto_complete_layout.setSpacing(20)  # 设置合适的间距
+        # 移除固定列宽限制，让布局自适应内容
+        auto_complete_layout.setColumnStretch(0, 1)
         auto_complete_layout.setColumnStretch(1, 1)
+        auto_complete_layout.setColumnStretch(2, 1)
         auto_complete_layout.setColumnStretch(3, 1)
         
         # 第一行
@@ -1001,8 +1103,11 @@ class MyIDE(QMainWindow):
         # 光标设置
         cursor_group = QGroupBox("光标")
         cursor_layout = QGridLayout(cursor_group)  # 使用网格布局
-        cursor_layout.setSpacing(15)
+        cursor_layout.setSpacing(20)  # 设置合适的间距
+        # 移除固定列宽限制，让布局自适应内容
+        cursor_layout.setColumnStretch(0, 1)
         cursor_layout.setColumnStretch(1, 1)
+        cursor_layout.setColumnStretch(2, 1)
         cursor_layout.setColumnStretch(3, 1)
         
         # 第一行
@@ -1041,8 +1146,11 @@ class MyIDE(QMainWindow):
         # 显示扩展设置
         display_ext_group = QGroupBox("显示扩展")
         display_ext_layout = QGridLayout(display_ext_group)  # 使用网格布局
-        display_ext_layout.setSpacing(15)
+        display_ext_layout.setSpacing(20)  # 设置合适的间距
+        # 移除固定列宽限制，让布局自适应内容
+        display_ext_layout.setColumnStretch(0, 1)
         display_ext_layout.setColumnStretch(1, 1)
+        display_ext_layout.setColumnStretch(2, 1)
         display_ext_layout.setColumnStretch(3, 1)
         
         # 第一行
@@ -1064,8 +1172,11 @@ class MyIDE(QMainWindow):
         # 换行设置
         wrap_group = QGroupBox("换行")
         wrap_layout = QGridLayout(wrap_group)  # 使用网格布局
-        wrap_layout.setSpacing(15)
+        wrap_layout.setSpacing(20)  # 设置合适的间距
+        # 移除固定列宽限制，让布局自适应内容
+        wrap_layout.setColumnStretch(0, 1)
         wrap_layout.setColumnStretch(1, 1)
+        wrap_layout.setColumnStretch(2, 1)
         wrap_layout.setColumnStretch(3, 1)
         
         # 第一行
@@ -1196,6 +1307,161 @@ class MyIDE(QMainWindow):
         
         terminal_layout.addWidget(terminal_font_group)
         
+        # 7. 主题颜色设置
+        theme_color_tab = QWidget()
+        tab_widget.addTab(theme_color_tab, "主题颜色")
+        
+        theme_color_layout = QVBoxLayout(theme_color_tab)
+        
+        # 导入颜色选择对话框
+        from PyQt6.QtWidgets import QColorDialog, QPushButton
+        from PyQt6.QtGui import QColor
+        
+        # 颜色选择函数
+        def choose_color(line_edit):
+            """打开颜色选择器，更新输入框"""
+            # 解析当前颜色
+            current_color_str = line_edit.text()
+            try:
+                r, g, b = map(int, current_color_str.split(","))
+                current_color = QColor(r, g, b)
+            except:
+                current_color = QColor(255, 255, 255)
+            
+            # 打开颜色选择器
+            color = QColorDialog.getColor(current_color, dialog)
+            if color.isValid():
+                # 更新输入框
+                line_edit.setText(f"{color.red()},{color.green()},{color.blue()}")
+        
+        # 亮色主题颜色设置
+        light_theme_group = QGroupBox("亮色主题")
+        light_theme_layout = QGridLayout(light_theme_group)
+        light_theme_layout.setSpacing(15)
+        light_theme_layout.setColumnStretch(1, 1)
+        
+        # 编辑器背景
+        light_theme_layout.addWidget(QLabel("编辑器背景:"), 0, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_editor_bg_edit = QLineEdit(self.settings.get("light_editor_bg", "255,255,255"))
+        light_theme_layout.addWidget(self.light_editor_bg_edit, 0, 1)
+        light_editor_bg_btn = QPushButton("选择")
+        light_editor_bg_btn.clicked.connect(lambda: choose_color(self.light_editor_bg_edit))
+        light_theme_layout.addWidget(light_editor_bg_btn, 0, 2)
+        
+        # 编辑器前景
+        light_theme_layout.addWidget(QLabel("编辑器前景:"), 1, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_editor_fg_edit = QLineEdit(self.settings.get("light_editor_fg", "0,0,0"))
+        light_theme_layout.addWidget(self.light_editor_fg_edit, 1, 1)
+        light_editor_fg_btn = QPushButton("选择")
+        light_editor_fg_btn.clicked.connect(lambda: choose_color(self.light_editor_fg_edit))
+        light_theme_layout.addWidget(light_editor_fg_btn, 1, 2)
+        
+        # 边距背景
+        light_theme_layout.addWidget(QLabel("边距背景:"), 2, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_margin_bg_edit = QLineEdit(self.settings.get("light_margin_bg", "255,255,255"))
+        light_theme_layout.addWidget(self.light_margin_bg_edit, 2, 1)
+        light_margin_bg_btn = QPushButton("选择")
+        light_margin_bg_btn.clicked.connect(lambda: choose_color(self.light_margin_bg_edit))
+        light_theme_layout.addWidget(light_margin_bg_btn, 2, 2)
+        
+        # 光标行背景
+        light_theme_layout.addWidget(QLabel("光标行背景:"), 3, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_caret_line_bg_edit = QLineEdit(self.settings.get("light_caret_line_bg", "250,250,200"))
+        light_theme_layout.addWidget(self.light_caret_line_bg_edit, 3, 1)
+        light_caret_line_bg_btn = QPushButton("选择")
+        light_caret_line_bg_btn.clicked.connect(lambda: choose_color(self.light_caret_line_bg_edit))
+        light_theme_layout.addWidget(light_caret_line_bg_btn, 3, 2)
+        
+        # 缩进指南
+        light_theme_layout.addWidget(QLabel("缩进指南:"), 4, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_indent_guide_edit = QLineEdit(self.settings.get("light_indent_guide", "200,200,200"))
+        light_theme_layout.addWidget(self.light_indent_guide_edit, 4, 1)
+        light_indent_guide_btn = QPushButton("选择")
+        light_indent_guide_btn.clicked.connect(lambda: choose_color(self.light_indent_guide_edit))
+        light_theme_layout.addWidget(light_indent_guide_btn, 4, 2)
+        
+        # 括号匹配背景
+        light_theme_layout.addWidget(QLabel("括号匹配背景:"), 5, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_matched_brace_bg_edit = QLineEdit(self.settings.get("light_matched_brace_bg", "200,200,200"))
+        light_theme_layout.addWidget(self.light_matched_brace_bg_edit, 5, 1)
+        light_matched_brace_bg_btn = QPushButton("选择")
+        light_matched_brace_bg_btn.clicked.connect(lambda: choose_color(self.light_matched_brace_bg_edit))
+        light_theme_layout.addWidget(light_matched_brace_bg_btn, 5, 2)
+        
+        # 括号匹配前景
+        light_theme_layout.addWidget(QLabel("括号匹配前景:"), 6, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.light_matched_brace_fg_edit = QLineEdit(self.settings.get("light_matched_brace_fg", "0,0,0"))
+        light_theme_layout.addWidget(self.light_matched_brace_fg_edit, 6, 1)
+        light_matched_brace_fg_btn = QPushButton("选择")
+        light_matched_brace_fg_btn.clicked.connect(lambda: choose_color(self.light_matched_brace_fg_edit))
+        light_theme_layout.addWidget(light_matched_brace_fg_btn, 6, 2)
+        
+        theme_color_layout.addWidget(light_theme_group)
+        
+        # 暗色主题颜色设置
+        dark_theme_group = QGroupBox("暗色主题")
+        dark_theme_layout = QGridLayout(dark_theme_group)
+        dark_theme_layout.setSpacing(15)
+        dark_theme_layout.setColumnStretch(1, 1)
+        
+        # 编辑器背景
+        dark_theme_layout.addWidget(QLabel("编辑器背景:"), 0, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_editor_bg_edit = QLineEdit(self.settings.get("dark_editor_bg", "30,30,30"))
+        dark_theme_layout.addWidget(self.dark_editor_bg_edit, 0, 1)
+        dark_editor_bg_btn = QPushButton("选择")
+        dark_editor_bg_btn.clicked.connect(lambda: choose_color(self.dark_editor_bg_edit))
+        dark_theme_layout.addWidget(dark_editor_bg_btn, 0, 2)
+        
+        # 编辑器前景
+        dark_theme_layout.addWidget(QLabel("编辑器前景:"), 1, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_editor_fg_edit = QLineEdit(self.settings.get("dark_editor_fg", "255,255,255"))
+        dark_theme_layout.addWidget(self.dark_editor_fg_edit, 1, 1)
+        dark_editor_fg_btn = QPushButton("选择")
+        dark_editor_fg_btn.clicked.connect(lambda: choose_color(self.dark_editor_fg_edit))
+        dark_theme_layout.addWidget(dark_editor_fg_btn, 1, 2)
+        
+        # 边距背景
+        dark_theme_layout.addWidget(QLabel("边距背景:"), 2, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_margin_bg_edit = QLineEdit(self.settings.get("dark_margin_bg", "30,30,30"))
+        dark_theme_layout.addWidget(self.dark_margin_bg_edit, 2, 1)
+        dark_margin_bg_btn = QPushButton("选择")
+        dark_margin_bg_btn.clicked.connect(lambda: choose_color(self.dark_margin_bg_edit))
+        dark_theme_layout.addWidget(dark_margin_bg_btn, 2, 2)
+        
+        # 光标行背景
+        dark_theme_layout.addWidget(QLabel("光标行背景:"), 3, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_caret_line_bg_edit = QLineEdit(self.settings.get("dark_caret_line_bg", "50,50,70"))
+        dark_theme_layout.addWidget(self.dark_caret_line_bg_edit, 3, 1)
+        dark_caret_line_bg_btn = QPushButton("选择")
+        dark_caret_line_bg_btn.clicked.connect(lambda: choose_color(self.dark_caret_line_bg_edit))
+        dark_theme_layout.addWidget(dark_caret_line_bg_btn, 3, 2)
+        
+        # 缩进指南
+        dark_theme_layout.addWidget(QLabel("缩进指南:"), 4, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_indent_guide_edit = QLineEdit(self.settings.get("dark_indent_guide", "70,70,70"))
+        dark_theme_layout.addWidget(self.dark_indent_guide_edit, 4, 1)
+        dark_indent_guide_btn = QPushButton("选择")
+        dark_indent_guide_btn.clicked.connect(lambda: choose_color(self.dark_indent_guide_edit))
+        dark_theme_layout.addWidget(dark_indent_guide_btn, 4, 2)
+        
+        # 括号匹配背景
+        dark_theme_layout.addWidget(QLabel("括号匹配背景:"), 5, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_matched_brace_bg_edit = QLineEdit(self.settings.get("dark_matched_brace_bg", "50,50,70"))
+        dark_theme_layout.addWidget(self.dark_matched_brace_bg_edit, 5, 1)
+        dark_matched_brace_bg_btn = QPushButton("选择")
+        dark_matched_brace_bg_btn.clicked.connect(lambda: choose_color(self.dark_matched_brace_bg_edit))
+        dark_theme_layout.addWidget(dark_matched_brace_bg_btn, 5, 2)
+        
+        # 括号匹配前景
+        dark_theme_layout.addWidget(QLabel("括号匹配前景:"), 6, 0, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.dark_matched_brace_fg_edit = QLineEdit(self.settings.get("dark_matched_brace_fg", "255,255,255"))
+        dark_theme_layout.addWidget(self.dark_matched_brace_fg_edit, 6, 1)
+        dark_matched_brace_fg_btn = QPushButton("选择")
+        dark_matched_brace_fg_btn.clicked.connect(lambda: choose_color(self.dark_matched_brace_fg_edit))
+        dark_theme_layout.addWidget(dark_matched_brace_fg_btn, 6, 2)
+        
+        theme_color_layout.addWidget(dark_theme_group)
+        
         # 按钮布局
         button_layout = QHBoxLayout()
         
@@ -1263,6 +1529,23 @@ class MyIDE(QMainWindow):
         self.settings["terminal_font_size"] = self.terminal_font_size_spin.value()
         self.settings["terminal_font_family"] = self.terminal_font_family_edit.text()
         
+        # 保存主题颜色设置
+        self.settings["light_editor_bg"] = self.light_editor_bg_edit.text()
+        self.settings["light_editor_fg"] = self.light_editor_fg_edit.text()
+        self.settings["light_margin_bg"] = self.light_margin_bg_edit.text()
+        self.settings["light_caret_line_bg"] = self.light_caret_line_bg_edit.text()
+        self.settings["light_indent_guide"] = self.light_indent_guide_edit.text()
+        self.settings["light_matched_brace_bg"] = self.light_matched_brace_bg_edit.text()
+        self.settings["light_matched_brace_fg"] = self.light_matched_brace_fg_edit.text()
+        
+        self.settings["dark_editor_bg"] = self.dark_editor_bg_edit.text()
+        self.settings["dark_editor_fg"] = self.dark_editor_fg_edit.text()
+        self.settings["dark_margin_bg"] = self.dark_margin_bg_edit.text()
+        self.settings["dark_caret_line_bg"] = self.dark_caret_line_bg_edit.text()
+        self.settings["dark_indent_guide"] = self.dark_indent_guide_edit.text()
+        self.settings["dark_matched_brace_bg"] = self.dark_matched_brace_bg_edit.text()
+        self.settings["dark_matched_brace_fg"] = self.dark_matched_brace_fg_edit.text()
+        
         # 保存设置
         self.save_settings()
         
@@ -1293,6 +1576,8 @@ class MyIDE(QMainWindow):
                     
                     # 更新行号显示
                     editor.setMarginLineNumbers(0, self.settings.get("show_line_numbers", True))
+                    # 设置行号边距宽度，确保所有标签页保持一致
+                    editor.setMarginWidth(0, 50)
                     
                     # 更新缩进指南
                     editor.setIndentationGuides(self.settings.get("show_indentation_guides", True))
@@ -1377,6 +1662,9 @@ class MyIDE(QMainWindow):
                         editor.setMarginWidth(1, 20)  # 折叠边距宽度
                     else:
                         editor.setMarginWidth(1, 0)  # 隐藏折叠边距
+                    
+                    # 最后再次设置行号边距宽度，确保不会被其他操作覆盖
+                    editor.setMarginWidth(0, 50)  # 行号边距，所有标签页保持一致
                     
                     # 更新状态栏显示
                     self.statusBar().setVisible(self.settings.get("show_status_bar", True))
@@ -1748,17 +2036,32 @@ class MyIDE(QMainWindow):
             from PyQt6.Qsci import QsciLexerPython
             lexer = QsciLexerPython()
             lexer.setFont(font)
+            # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+            lexer.setDefaultPaper(editor.paper())
+            lexer.setDefaultColor(editor.color())
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif language == "C++" or language == "C":
             from PyQt6.Qsci import QsciLexerCPP
             lexer = QsciLexerCPP()
             lexer.setFont(font)
+            # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+            lexer.setDefaultPaper(editor.paper())
+            lexer.setDefaultColor(editor.color())
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif language == "Java":
             from PyQt6.Qsci import QsciLexerJava
             lexer = QsciLexerJava()
             lexer.setFont(font)
+            # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+            lexer.setDefaultPaper(editor.paper())
+            lexer.setDefaultColor(editor.color())
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif language == "HTML":
             from PyQt6.Qsci import QsciLexerHTML
             lexer = QsciLexerHTML()
@@ -1771,22 +2074,39 @@ class MyIDE(QMainWindow):
             except AttributeError:
                 pass
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif language == "JavaScript" or language == "JSON" or language == "JSON5":
             from PyQt6.Qsci import QsciLexerJavaScript
             lexer = QsciLexerJavaScript()
             lexer.setFont(font)
+            # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+            lexer.setDefaultPaper(editor.paper())
+            lexer.setDefaultColor(editor.color())
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif language == "XML":
             from PyQt6.Qsci import QsciLexerXML
             lexer = QsciLexerXML()
             lexer.setFont(font)
+            # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+            lexer.setDefaultPaper(editor.paper())
+            lexer.setDefaultColor(editor.color())
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif "Markdown" in language or language == "Markdown":
             try:
                 from PyQt6.Qsci import QsciLexerMarkdown
                 lexer = QsciLexerMarkdown()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 # 如果没有Markdown lexer，使用HTML或普通文本
                 editor.setLexer(None)
@@ -1794,22 +2114,23 @@ class MyIDE(QMainWindow):
             from PyQt6.Qsci import QsciLexerCSS
             lexer = QsciLexerCSS()
             lexer.setFont(font)
-            # 设置CSS lexer的颜色主题
-            try:
-                # 确保CSS语法高亮颜色鲜明
-                lexer.setColor(QColor(0, 0, 128), QsciLexerCSS.ColorProperty)
-                lexer.setColor(QColor(0, 128, 0), QsciLexerCSS.ColorComment)
-                lexer.setColor(QColor(128, 0, 0), QsciLexerCSS.ColorKeyword)
-                lexer.setColor(QColor(0, 0, 0), QsciLexerCSS.ColorDefault)
-            except AttributeError:
-                pass
+            # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+            lexer.setDefaultPaper(editor.paper())
+            lexer.setDefaultColor(editor.color())
             editor.setLexer(lexer)
+            # 应用当前主题的语法高亮颜色
+            self.apply_current_theme_to_editor(editor)
         elif language == "PHP":
             try:
                 from PyQt6.Qsci import QsciLexerPHP
                 lexer = QsciLexerPHP()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Bash" or language == "Shell" or language == "Batch":
@@ -1817,7 +2138,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerBash
                 lexer = QsciLexerBash()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "SQL":
@@ -1825,7 +2151,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerSQL
                 lexer = QsciLexerSQL()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Perl":
@@ -1833,7 +2164,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerPerl
                 lexer = QsciLexerPerl()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Ruby":
@@ -1841,7 +2177,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerRuby
                 lexer = QsciLexerRuby()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Lua":
@@ -1849,7 +2190,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerLua
                 lexer = QsciLexerLua()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Rust":
@@ -1857,7 +2203,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerRust
                 lexer = QsciLexerRust()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Go":
@@ -1865,7 +2216,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerGo
                 lexer = QsciLexerGo()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Swift":
@@ -1873,7 +2229,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerSwift
                 lexer = QsciLexerSwift()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Kotlin":
@@ -1881,7 +2242,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerKotlin
                 lexer = QsciLexerKotlin()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "R":
@@ -1889,7 +2255,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerR
                 lexer = QsciLexerR()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 editor.setLexer(None)
         elif language == "Asm" or language == "NASM":
@@ -1898,7 +2269,12 @@ class MyIDE(QMainWindow):
                 from PyQt6.Qsci import QsciLexerCPP
                 lexer = QsciLexerCPP()
                 lexer.setFont(font)
+                # 设置lexer的默认颜色为当前编辑器的颜色，以匹配主题
+                lexer.setDefaultPaper(editor.paper())
+                lexer.setDefaultColor(editor.color())
                 editor.setLexer(lexer)
+                # 应用当前主题的语法高亮颜色
+                self.apply_current_theme_to_editor(editor)
             except ImportError:
                 # 如果没有合适的lexer，使用默认设置
                 editor.setLexer(None)
@@ -2528,49 +2904,50 @@ class MyIDE(QMainWindow):
     
     def apply_initial_theme(self):
         """应用初始主题"""
-        # 根据当前设置设置主题
-        if self.settings.get("theme", "light") == "light":
-            self.light_theme_action.setChecked(True)
-            self.switch_theme("light")
-        else:
-            self.dark_theme_action.setChecked(True)
-            self.switch_theme("dark")
+        # 移除深色主题支持，只使用默认主题
+        self.settings["theme"] = "light"
+        self.save_settings()
+        self.light_theme_action.setChecked(True)
+        self.switch_theme("light")
     
-    def switch_theme(self, theme):
+    def switch_theme(self, theme=None):
         """切换IDE主题"""
         from PyQt6.QtGui import QPalette, QColor
         
-        # 更新设置
-        self.settings["theme"] = theme
-        self.save_settings()
+        # 解析颜色字符串为QColor对象
+        def parse_color(color_str):
+            try:
+                r, g, b = map(int, color_str.split(","))
+                return QColor(r, g, b)
+            except:
+                return QColor(255, 255, 255)  # 默认白色
         
-        # 更新主题菜单项的选中状态
-        self.light_theme_action.setChecked(theme == "light")
-        self.dark_theme_action.setChecked(theme == "dark")
+        # 使用传入的主题或当前设置的主题
+        if theme is None:
+            theme = self.settings.get("theme", "light")
         
-        # 定义主题颜色
-        if theme == "light":
-            # 亮色主题
-            editor_bg = QColor(255, 255, 255)  # 白色背景
-            editor_fg = QColor(0, 0, 0)  # 黑色前景
-            terminal_bg = QColor(0, 0, 0)  # 终端保持黑色
-            terminal_fg = QColor(255, 255, 255)  # 终端保持白色文字
-            margin_bg = QColor(240, 240, 240)  # 浅灰色边距
-            caret_line_bg = QColor(250, 250, 200)  # 浅黄色光标行
-            indent_guide = QColor(200, 200, 200)  # 浅灰色缩进指南
-            list_bg = QColor(255, 255, 255)  # 白色列表背景
-            list_fg = QColor(0, 0, 0)  # 黑色列表文字
-        else:
-            # 暗色主题
-            editor_bg = QColor(30, 30, 30)  # 深灰色背景
-            editor_fg = QColor(200, 200, 200)  # 浅灰色前景
-            terminal_bg = QColor(0, 0, 0)  # 终端保持黑色
-            terminal_fg = QColor(255, 255, 255)  # 终端保持白色文字
-            margin_bg = QColor(50, 50, 50)  # 深灰色边距
-            caret_line_bg = QColor(50, 50, 70)  # 深蓝色光标行
-            indent_guide = QColor(70, 70, 70)  # 深灰色缩进指南
-            list_bg = QColor(30, 30, 30)  # 深灰色列表背景
-            list_fg = QColor(200, 200, 200)  # 浅灰色列表文字
+        # 根据主题选择对应的颜色设置
+        if theme == "dark":
+            editor_bg = parse_color(self.settings.get("dark_editor_bg", "30,30,30"))
+            editor_fg = parse_color(self.settings.get("dark_editor_fg", "255,255,255"))  # 暗色模式文字为白色
+            margin_bg = parse_color(self.settings.get("dark_margin_bg", "30,30,30"))
+            caret_line_bg = parse_color(self.settings.get("dark_caret_line_bg", "50,50,70"))
+            indent_guide = parse_color(self.settings.get("dark_indent_guide", "70,70,70"))
+            matched_brace_bg = parse_color(self.settings.get("dark_matched_brace_bg", "50,50,70"))
+            matched_brace_fg = parse_color(self.settings.get("dark_matched_brace_fg", "255,255,255"))
+        else:  # light theme
+            editor_bg = parse_color(self.settings.get("light_editor_bg", "255,255,255"))
+            editor_fg = parse_color(self.settings.get("light_editor_fg", "0,0,0"))
+            margin_bg = parse_color(self.settings.get("light_margin_bg", "255,255,255"))
+            caret_line_bg = parse_color(self.settings.get("light_caret_line_bg", "250,250,200"))
+            indent_guide = parse_color(self.settings.get("light_indent_guide", "200,200,200"))
+            matched_brace_bg = parse_color(self.settings.get("light_matched_brace_bg", "200,200,200"))
+            matched_brace_fg = parse_color(self.settings.get("light_matched_brace_fg", "0,0,0"))
+        
+        terminal_bg = QColor(0, 0, 0)  # 终端保持黑色
+        terminal_fg = QColor(255, 255, 255)  # 终端保持白色文字
+        list_bg = editor_bg
+        list_fg = editor_fg
         
         # 更新所有编辑器的主题
         if hasattr(self, 'tab_widget') and self.tab_widget is not None:
@@ -2584,11 +2961,11 @@ class MyIDE(QMainWindow):
                     # 更新边距颜色
                     editor.setMarginsBackgroundColor(margin_bg)
                     
-                    # 更新光标行颜色
-                    editor.setCaretLineBackgroundColor(caret_line_bg)
+                    # 移除光标行背景颜色
+                    editor.setCaretLineBackgroundColor(editor_bg)
                     
-                    # 更新缩进指南颜色
-                    editor.setIndentationGuidesBackgroundColor(indent_guide)
+                    # 移除缩进指南颜色
+                    editor.setIndentationGuidesBackgroundColor(editor_bg)
                     
                     # 更新语法高亮颜色
                     lexer = editor.lexer()
@@ -2599,37 +2976,140 @@ class MyIDE(QMainWindow):
                         
                         # 针对不同类型的lexer设置特定颜色
                         try:
-                            from PyQt6.Qsci import QsciLexerHTML, QsciLexerCSS, QsciLexerJavaScript
+                            from PyQt6.Qsci import (QsciLexerHTML, QsciLexerCSS, QsciLexerJavaScript,
+                                                 QsciLexerPython, QsciLexerCPP, QsciLexerJava, QsciLexerXML,
+                                                 QsciLexerSQL, QsciLexerPHP, QsciLexerRuby, QsciLexerPerl,
+                                                 QsciLexerBash)
+                            
+                            # 定义主题适配的颜色
+                            if theme == "light":
+                                # 亮色主题 - 使用深色但不刺眼的颜色
+                                tag_color = QColor(128, 0, 128)  # 紫色标签
+                                attribute_color = QColor(0, 0, 255)  # 蓝色属性
+                                comment_color = QColor(0, 102, 0)  # 深绿色注释 (改进: 提高对比度)
+                                entity_color = QColor(102, 102, 0)  # 深橄榄绿实体 (改进: 提高对比度)
+                                number_color = QColor(0, 102, 102)  # 深青色数字 (改进: 提高对比度)
+                                string_color = QColor(163, 21, 21)  # 深红色字符串
+                                keyword_color = QColor(0, 0, 255)  # 蓝色关键字
+                                property_color = QColor(0, 0, 255)  # 蓝色属性
+                                selector_color = QColor(128, 0, 0)  # 深红色选择器
+                                operator_color = QColor(0, 0, 0)  # 黑色括号
+                                function_color = QColor(0, 102, 102)  # 深青色函数 (改进: 提高对比度)
+                                class_color = QColor(128, 0, 128)  # 紫色类
+                                variable_color = QColor(0, 0, 0)  # 黑色变量
+                            else:
+                                # 暗色主题 - 使用明亮但不刺眼的颜色
+                                tag_color = QColor(255, 68, 68)  # 深红色标签 (改进: 提高对比度)
+                                attribute_color = QColor(100, 200, 255)  # 亮蓝色属性
+                                comment_color = QColor(68, 204, 68)  # 深绿色注释 (改进: 提高对比度)
+                                entity_color = QColor(255, 255, 100)  # 亮黄色实体
+                                number_color = QColor(100, 255, 255)  # 亮青色数字
+                                string_color = QColor(255, 68, 255)  # 深紫色字符串 (改进: 提高对比度)
+                                keyword_color = QColor(255, 136, 68)  # 深橙色关键字 (改进: 提高对比度)
+                                property_color = QColor(100, 200, 255)  # 亮蓝色属性
+                                selector_color = QColor(255, 136, 68)  # 深橙色选择器 (改进: 提高对比度)
+                                operator_color = QColor(255, 255, 255)  # 白色括号
+                                function_color = QColor(100, 255, 100)  # 亮绿色函数
+                                class_color = QColor(255, 68, 255)  # 深紫色类 (改进: 提高对比度)
+                                variable_color = QColor(200, 200, 200)  # 浅灰色变量
                             
                             if isinstance(lexer, QsciLexerHTML):
-                                # HTML lexer特定颜色设置 - 更亮的颜色
-                                lexer.setColor(QColor(255, 0, 0), QsciLexerHTML.ColorTag)  # 亮红色标签
-                                lexer.setColor(QColor(0, 128, 255), QsciLexerHTML.ColorAttribute)  # 亮蓝色属性
-                                lexer.setColor(QColor(0, 200, 0), QsciLexerHTML.ColorComment)  # 亮绿色注释
-                                lexer.setColor(QColor(255, 255, 0), QsciLexerHTML.ColorEntity)  # 亮黄色实体
-                                lexer.setColor(QColor(0, 255, 255), QsciLexerHTML.ColorNumber)  # 亮青色数字
-                                lexer.setColor(QColor(255, 0, 255), QsciLexerHTML.ColorString)  # 亮紫色字符串
+                                # HTML lexer特定颜色设置
+                                lexer.setColor(tag_color, QsciLexerHTML.ColorTag)  # 标签
+                                lexer.setColor(attribute_color, QsciLexerHTML.ColorAttribute)  # 属性
+                                lexer.setColor(comment_color, QsciLexerHTML.ColorComment)  # 注释
+                                lexer.setColor(entity_color, QsciLexerHTML.ColorEntity)  # 实体
+                                lexer.setColor(number_color, QsciLexerHTML.ColorNumber)  # 数字
+                                lexer.setColor(string_color, QsciLexerHTML.ColorString)  # 字符串
                             elif isinstance(lexer, QsciLexerCSS):
-                                # CSS lexer特定颜色设置 - 更亮的颜色
-                                lexer.setColor(QColor(0, 128, 255), QsciLexerCSS.ColorProperty)  # 亮蓝色属性
-                                lexer.setColor(QColor(0, 200, 0), QsciLexerCSS.ColorComment)  # 亮绿色注释
-                                lexer.setColor(QColor(255, 0, 0), QsciLexerCSS.ColorKeyword)  # 亮红色关键字
-                                lexer.setColor(QColor(255, 0, 255), QsciLexerCSS.ColorString)  # 亮紫色字符串
-                                lexer.setColor(QColor(0, 255, 255), QsciLexerCSS.ColorNumber)  # 亮青色数字
-                                lexer.setColor(QColor(255, 255, 0), QsciLexerCSS.ColorSelector)  # 亮黄色选择器
+                                # CSS lexer特定颜色设置
+                                lexer.setColor(property_color, QsciLexerCSS.ColorProperty)  # 属性
+                                lexer.setColor(comment_color, QsciLexerCSS.ColorComment)  # 注释
+                                lexer.setColor(keyword_color, QsciLexerCSS.ColorKeyword)  # 关键字
+                                lexer.setColor(string_color, QsciLexerCSS.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerCSS.ColorNumber)  # 数字
+                                lexer.setColor(selector_color, QsciLexerCSS.ColorSelector)  # 选择器
                             elif isinstance(lexer, QsciLexerJavaScript):
-                                # JavaScript lexer特定颜色设置 - 更亮的颜色
-                                lexer.setColor(QColor(255, 0, 0), QsciLexerJavaScript.ColorKeyword)  # 亮红色关键字
-                                lexer.setColor(QColor(0, 200, 0), QsciLexerJavaScript.ColorComment)  # 亮绿色注释
-                                lexer.setColor(QColor(255, 0, 255), QsciLexerJavaScript.ColorString)  # 亮紫色字符串
-                                lexer.setColor(QColor(0, 255, 255), QsciLexerJavaScript.ColorNumber)  # 亮青色数字
+                                # JavaScript lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerJavaScript.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerJavaScript.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerJavaScript.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerJavaScript.ColorNumber)  # 数字
+                            elif isinstance(lexer, QsciLexerPython):
+                                # Python lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerPython.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerPython.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerPython.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerPython.ColorNumber)  # 数字
+                                lexer.setColor(function_color, QsciLexerPython.ColorFunction)  # 函数
+                                lexer.setColor(class_color, QsciLexerPython.ColorClass)  # 类
+                            elif isinstance(lexer, QsciLexerCPP):
+                                # C++/C lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerCPP.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerCPP.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerCPP.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerCPP.ColorNumber)  # 数字
+                                lexer.setColor(function_color, QsciLexerCPP.ColorFunction)  # 函数
+                            elif isinstance(lexer, QsciLexerJava):
+                                # Java lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerJava.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerJava.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerJava.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerJava.ColorNumber)  # 数字
+                                lexer.setColor(class_color, QsciLexerJava.ColorClass)  # 类
+                            elif isinstance(lexer, QsciLexerXML):
+                                # XML lexer特定颜色设置
+                                lexer.setColor(tag_color, QsciLexerXML.ColorTag)  # 标签
+                                lexer.setColor(attribute_color, QsciLexerXML.ColorAttribute)  # 属性
+                                lexer.setColor(comment_color, QsciLexerXML.ColorComment)  # 注释
+                                lexer.setColor(entity_color, QsciLexerXML.ColorEntity)  # 实体
+                                lexer.setColor(string_color, QsciLexerXML.ColorString)  # 字符串
+                            elif isinstance(lexer, QsciLexerSQL):
+                                # SQL lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerSQL.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerSQL.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerSQL.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerSQL.ColorNumber)  # 数字
+                            elif isinstance(lexer, QsciLexerPHP):
+                                # PHP lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerPHP.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerPHP.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerPHP.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerPHP.ColorNumber)  # 数字
+                            elif isinstance(lexer, QsciLexerRuby):
+                                # Ruby lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerRuby.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerRuby.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerRuby.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerRuby.ColorNumber)  # 数字
+                            elif isinstance(lexer, QsciLexerPerl):
+                                # Perl lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerPerl.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerPerl.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerPerl.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerPerl.ColorNumber)  # 数字
+                            elif isinstance(lexer, QsciLexerBash):
+                                # Bash/Shell lexer特定颜色设置
+                                lexer.setColor(keyword_color, QsciLexerBash.ColorKeyword)  # 关键字
+                                lexer.setColor(comment_color, QsciLexerBash.ColorComment)  # 注释
+                                lexer.setColor(string_color, QsciLexerBash.ColorString)  # 字符串
+                                lexer.setColor(number_color, QsciLexerBash.ColorNumber)  # 数字
                             
-                            # 设置括号颜色
+                            # 设置括号颜色（适用于所有支持的lexer）
                             try:
                                 # 为所有lexer设置括号颜色
-                                lexer.setColor(QColor(255, 255, 0), QsciLexerHTML.ColorOperator)  # 亮黄色括号
-                                lexer.setColor(QColor(255, 255, 0), QsciLexerCSS.ColorOperator)  # 亮黄色括号
-                                lexer.setColor(QColor(255, 255, 0), QsciLexerJavaScript.ColorOperator)  # 亮黄色括号
+                                lexer.setColor(operator_color, QsciLexerHTML.ColorOperator)  # HTML括号
+                                lexer.setColor(operator_color, QsciLexerCSS.ColorOperator)  # CSS括号
+                                lexer.setColor(operator_color, QsciLexerJavaScript.ColorOperator)  # JS括号
+                                lexer.setColor(operator_color, QsciLexerPython.ColorOperator)  # Python括号
+                                lexer.setColor(operator_color, QsciLexerCPP.ColorOperator)  # C++括号
+                                lexer.setColor(operator_color, QsciLexerJava.ColorOperator)  # Java括号
+                                lexer.setColor(operator_color, QsciLexerXML.ColorOperator)  # XML括号
+                                lexer.setColor(operator_color, QsciLexerSQL.ColorOperator)  # SQL括号
+                                lexer.setColor(operator_color, QsciLexerPHP.ColorOperator)  # PHP括号
+                                lexer.setColor(operator_color, QsciLexerRuby.ColorOperator)  # Ruby括号
+                                lexer.setColor(operator_color, QsciLexerPerl.ColorOperator)  # Perl括号
+                                lexer.setColor(operator_color, QsciLexerBash.ColorOperator)  # Bash括号
                             except AttributeError:
                                 # 忽略不支持的颜色类型
                                 pass
@@ -2667,7 +3147,215 @@ class MyIDE(QMainWindow):
             self.problems_list.setPalette(palette)
         
         # 更新状态栏信息
-        self.statusBar().showMessage(f"已切换到{theme}主题")
+        self.statusBar().showMessage("主题已更新")
+    
+    def apply_current_theme_to_editor(self, editor):
+        """将当前主题应用到指定编辑器"""
+        from PyQt6.QtGui import QColor
+        
+        # 解析颜色字符串为QColor对象
+        def parse_color(color_str):
+            try:
+                r, g, b = map(int, color_str.split(","))
+                return QColor(r, g, b)
+            except:
+                return QColor(255, 255, 255)  # 默认白色
+        
+        # 获取当前主题
+        theme = self.settings.get("theme", "light")
+        
+        # 根据主题选择对应的颜色设置
+        if theme == "dark":
+            editor_bg = parse_color(self.settings.get("dark_editor_bg", "30,30,30"))
+            editor_fg = parse_color(self.settings.get("dark_editor_fg", "255,255,255"))  # 暗色模式文字为白色
+            margin_bg = parse_color(self.settings.get("dark_margin_bg", "30,30,30"))
+            caret_line_bg = parse_color(self.settings.get("dark_caret_line_bg", "50,50,70"))
+            indent_guide = parse_color(self.settings.get("dark_indent_guide", "70,70,70"))
+            matched_brace_bg = parse_color(self.settings.get("dark_matched_brace_bg", "50,50,70"))
+            matched_brace_fg = parse_color(self.settings.get("dark_matched_brace_fg", "255,255,255"))
+        else:  # light theme
+            editor_bg = parse_color(self.settings.get("light_editor_bg", "255,255,255"))
+            editor_fg = parse_color(self.settings.get("light_editor_fg", "0,0,0"))
+            margin_bg = parse_color(self.settings.get("light_margin_bg", "255,255,255"))
+            caret_line_bg = parse_color(self.settings.get("light_caret_line_bg", "250,250,200"))
+            indent_guide = parse_color(self.settings.get("light_indent_guide", "200,200,200"))
+            matched_brace_bg = parse_color(self.settings.get("light_matched_brace_bg", "200,200,200"))
+            matched_brace_fg = parse_color(self.settings.get("light_matched_brace_fg", "0,0,0"))
+        
+        # 更新编辑器背景色
+        editor.setPaper(editor_bg)
+        editor.setColor(editor_fg)
+        
+        # 更新边距颜色
+        editor.setMarginsBackgroundColor(margin_bg)
+        
+        # 移除光标行背景颜色
+        editor.setCaretLineBackgroundColor(editor_bg)
+        
+        # 移除缩进指南颜色
+        editor.setIndentationGuidesBackgroundColor(editor_bg)
+        
+        # 确保行号边距宽度保持一致
+        editor.setMarginWidth(0, 50)  # 行号边距，所有标签页保持一致
+        
+        # 确保行号字体与编辑器主字体保持一致
+        font = editor.font()
+        editor.setMarginsFont(font)
+        
+        # 移除括号匹配背景颜色，只保留前景颜色
+        editor.setMatchedBraceBackgroundColor(editor_bg)
+        editor.setMatchedBraceForegroundColor(editor_fg)
+        
+        # 更新语法高亮颜色
+        lexer = editor.lexer()
+        if lexer:
+            # 设置lexer的基本颜色
+            lexer.setDefaultPaper(editor_bg)
+            lexer.setDefaultColor(editor_fg)
+            
+            # 针对不同类型的lexer设置特定颜色
+            try:
+                from PyQt6.Qsci import (QsciLexerHTML, QsciLexerCSS, QsciLexerJavaScript,
+                                     QsciLexerPython, QsciLexerCPP, QsciLexerJava, QsciLexerXML,
+                                     QsciLexerSQL, QsciLexerPHP, QsciLexerRuby, QsciLexerPerl,
+                                     QsciLexerBash)
+                
+                # 定义主题适配的颜色
+                if theme == "light":
+                    # 亮色主题 - 使用深色但不刺眼的颜色
+                    tag_color = QColor(128, 0, 128)  # 紫色标签
+                    attribute_color = QColor(0, 0, 255)  # 蓝色属性
+                    comment_color = QColor(0, 102, 0)  # 深绿色注释 (改进: 提高对比度)
+                    entity_color = QColor(102, 102, 0)  # 深橄榄绿实体 (改进: 提高对比度)
+                    number_color = QColor(0, 102, 102)  # 深青色数字 (改进: 提高对比度)
+                    string_color = QColor(163, 21, 21)  # 深红色字符串
+                    keyword_color = QColor(0, 0, 255)  # 蓝色关键字
+                    property_color = QColor(0, 0, 255)  # 蓝色属性
+                    selector_color = QColor(128, 0, 0)  # 深红色选择器
+                    operator_color = QColor(0, 0, 0)  # 黑色括号
+                    function_color = QColor(0, 102, 102)  # 深青色函数 (改进: 提高对比度)
+                    class_color = QColor(128, 0, 128)  # 紫色类
+                else:
+                    # 暗色主题 - 使用明亮但不刺眼的颜色
+                    tag_color = QColor(255, 68, 68)  # 深红色标签 (改进: 提高对比度)
+                    attribute_color = QColor(100, 200, 255)  # 亮蓝色属性
+                    comment_color = QColor(68, 204, 68)  # 深绿色注释 (改进: 提高对比度)
+                    entity_color = QColor(255, 255, 100)  # 亮黄色实体
+                    number_color = QColor(100, 255, 255)  # 亮青色数字
+                    string_color = QColor(255, 68, 255)  # 深紫色字符串 (改进: 提高对比度)
+                    keyword_color = QColor(255, 136, 68)  # 深橙色关键字 (改进: 提高对比度)
+                    property_color = QColor(100, 200, 255)  # 亮蓝色属性
+                    selector_color = QColor(255, 136, 68)  # 深橙色选择器 (改进: 提高对比度)
+                    operator_color = QColor(255, 255, 255)  # 白色括号
+                    function_color = QColor(100, 255, 100)  # 亮绿色函数
+                    class_color = QColor(255, 68, 255)  # 深紫色类 (改进: 提高对比度)
+                
+                if isinstance(lexer, QsciLexerHTML):
+                    # HTML lexer特定颜色设置
+                    lexer.setColor(tag_color, QsciLexerHTML.ColorTag)  # 标签
+                    lexer.setColor(attribute_color, QsciLexerHTML.ColorAttribute)  # 属性
+                    lexer.setColor(comment_color, QsciLexerHTML.ColorComment)  # 注释
+                    lexer.setColor(entity_color, QsciLexerHTML.ColorEntity)  # 实体
+                    lexer.setColor(number_color, QsciLexerHTML.ColorNumber)  # 数字
+                    lexer.setColor(string_color, QsciLexerHTML.ColorString)  # 字符串
+                elif isinstance(lexer, QsciLexerCSS):
+                    # CSS lexer特定颜色设置
+                    lexer.setColor(property_color, QsciLexerCSS.ColorProperty)  # 属性
+                    lexer.setColor(comment_color, QsciLexerCSS.ColorComment)  # 注释
+                    lexer.setColor(keyword_color, QsciLexerCSS.ColorKeyword)  # 关键字
+                    lexer.setColor(string_color, QsciLexerCSS.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerCSS.ColorNumber)  # 数字
+                    lexer.setColor(selector_color, QsciLexerCSS.ColorSelector)  # 选择器
+                elif isinstance(lexer, QsciLexerJavaScript):
+                    # JavaScript lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerJavaScript.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerJavaScript.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerJavaScript.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerJavaScript.ColorNumber)  # 数字
+                elif isinstance(lexer, QsciLexerPython):
+                    # Python lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerPython.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerPython.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerPython.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerPython.ColorNumber)  # 数字
+                    lexer.setColor(function_color, QsciLexerPython.ColorFunction)  # 函数
+                    lexer.setColor(class_color, QsciLexerPython.ColorClass)  # 类
+                elif isinstance(lexer, QsciLexerCPP):
+                    # C++/C lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerCPP.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerCPP.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerCPP.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerCPP.ColorNumber)  # 数字
+                    lexer.setColor(function_color, QsciLexerCPP.ColorFunction)  # 函数
+                elif isinstance(lexer, QsciLexerJava):
+                    # Java lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerJava.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerJava.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerJava.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerJava.ColorNumber)  # 数字
+                    lexer.setColor(class_color, QsciLexerJava.ColorClass)  # 类
+                elif isinstance(lexer, QsciLexerXML):
+                    # XML lexer特定颜色设置
+                    lexer.setColor(tag_color, QsciLexerXML.ColorTag)  # 标签
+                    lexer.setColor(attribute_color, QsciLexerXML.ColorAttribute)  # 属性
+                    lexer.setColor(comment_color, QsciLexerXML.ColorComment)  # 注释
+                    lexer.setColor(entity_color, QsciLexerXML.ColorEntity)  # 实体
+                    lexer.setColor(string_color, QsciLexerXML.ColorString)  # 字符串
+                elif isinstance(lexer, QsciLexerSQL):
+                    # SQL lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerSQL.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerSQL.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerSQL.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerSQL.ColorNumber)  # 数字
+                elif isinstance(lexer, QsciLexerPHP):
+                    # PHP lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerPHP.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerPHP.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerPHP.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerPHP.ColorNumber)  # 数字
+                elif isinstance(lexer, QsciLexerRuby):
+                    # Ruby lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerRuby.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerRuby.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerRuby.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerRuby.ColorNumber)  # 数字
+                elif isinstance(lexer, QsciLexerPerl):
+                    # Perl lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerPerl.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerPerl.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerPerl.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerPerl.ColorNumber)  # 数字
+                elif isinstance(lexer, QsciLexerBash):
+                    # Bash/Shell lexer特定颜色设置
+                    lexer.setColor(keyword_color, QsciLexerBash.ColorKeyword)  # 关键字
+                    lexer.setColor(comment_color, QsciLexerBash.ColorComment)  # 注释
+                    lexer.setColor(string_color, QsciLexerBash.ColorString)  # 字符串
+                    lexer.setColor(number_color, QsciLexerBash.ColorNumber)  # 数字
+                
+                # 设置括号颜色（适用于所有支持的lexer）
+                try:
+                    # 为所有lexer设置括号颜色
+                    lexer.setColor(operator_color, QsciLexerHTML.ColorOperator)  # HTML括号
+                    lexer.setColor(operator_color, QsciLexerCSS.ColorOperator)  # CSS括号
+                    lexer.setColor(operator_color, QsciLexerJavaScript.ColorOperator)  # JS括号
+                    lexer.setColor(operator_color, QsciLexerPython.ColorOperator)  # Python括号
+                    lexer.setColor(operator_color, QsciLexerCPP.ColorOperator)  # C++括号
+                    lexer.setColor(operator_color, QsciLexerJava.ColorOperator)  # Java括号
+                    lexer.setColor(operator_color, QsciLexerXML.ColorOperator)  # XML括号
+                    lexer.setColor(operator_color, QsciLexerSQL.ColorOperator)  # SQL括号
+                    lexer.setColor(operator_color, QsciLexerPHP.ColorOperator)  # PHP括号
+                    lexer.setColor(operator_color, QsciLexerRuby.ColorOperator)  # Ruby括号
+                    lexer.setColor(operator_color, QsciLexerPerl.ColorOperator)  # Perl括号
+                    lexer.setColor(operator_color, QsciLexerBash.ColorOperator)  # Bash括号
+                except AttributeError:
+                    # 忽略不支持的颜色类型
+                    pass
+            except (ImportError, AttributeError):
+                # 忽略不支持的lexer或颜色类型
+                pass
+            
+            # 重新应用lexer
+            editor.setLexer(lexer)
     
     def show_syntax_errors(self, problems):
         """显示语法错误和警告，提供详细的错误信息和修复建议"""
